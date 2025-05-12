@@ -1645,6 +1645,10 @@ class TDH8(chirp_common.CloneModeRadio):
                                 current_index=_press.lsidekey4))
             basic.append(rs)
 
+            rs = RadioSetting("tailclean", "Squelch Tail Elimination",
+                              RadioSettingValueBoolean(_settings.tailclean))
+            basic.append(rs)
+
         if self.MODEL in H3_LIST:
             rs = RadioSetting("tonevoice", "Repeater Tone",
                               RadioSettingValueList(
