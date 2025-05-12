@@ -191,7 +191,6 @@ struct {
   char msg3[16];
 } poweron_msg;
 
-
 #seekto 0x1CC8;
 struct{
   u8 stopkey1;
@@ -262,6 +261,7 @@ struct{
 struct{
     u8 ecode[7];
 }endcode;
+
 """
 
 MEM_FORMAT_H3 = """
@@ -525,6 +525,12 @@ struct {
 struct{
   u8 micgain;
 } mic;
+
+#seekto 0x1f38;
+struct{
+  u8 unused1:7,
+     btstatus:1;
+} bluetooth;
 
 """
 
@@ -798,6 +804,9 @@ TIMEOUT730_LIST = ["Off"] + ["%s sec" % x for x in range(30, 240, 30)]
 MIC_GAIN_LIST = ['%s' % x for x in range(0, 10)]
 H8_LIST = ["TD-H8", "TD-H8-HAM", "TD-H8-GMRS"]
 H3_LIST = ["TD-H3", "TD-H3-HAM", "TD-H3-GMRS"]
+H3_PLUS_LIST = ["TD-H3-Plus", "TD-H3-Plus-HAM", "TD-H3-Plus-GMRS"]
+H3_LIST = H3_LIST + H3_PLUS_LIST
+RADIO_MODE_LIST = ["HAM", "GMRS", "NORMAL"]
 
 GMRS_FREQS = bandplan_na.ALL_GMRS_FREQS
 
@@ -812,6 +821,7 @@ ALL_MODEL = H8_LIST + H3_LIST + ["RT-730"]
 
 TD_H8 = b"\x50\x56\x4F\x4A\x48\x1C\x14"
 TD_H3 = b"\x50\x56\x4F\x4A\x48\x5C\x14"
+TD_H3_PLUS = TD_H3
 RT_730 = b"\x50\x47\x4F\x4A\x48\xC3\x44"
 
 
@@ -990,6 +1000,10 @@ def _do_upload(radio):
 
 TDH8_CHARSET = chirp_common.CHARSET_ALPHANUMERIC + \
     "!@#$%^&*()+-=[]:\";'<>?,./"
+
+
+class radiomode:
+    mode = -1
 
 
 @directory.register
@@ -1401,6 +1415,9 @@ class TDH8(chirp_common.CloneModeRadio):
         _boffset = self._memobj.boffset
         _vfoa = self._memobj.vfoa
         _vfob = self._memobj.vfob
+        if self.MODEL in H3_LIST:
+            _bluetooth = self._memobj.bluetooth
+
         if self.MODEL != "RT-730":
             _gcode = self._memobj.groupcode
         _msg = self._memobj.poweron_msg
@@ -1409,8 +1426,39 @@ class TDH8(chirp_common.CloneModeRadio):
         fmmode = RadioSettingGroup("fmmode", "FM")
         dtmf = RadioSettingGroup("dtmf", "DTMF")
 
-        # group = RadioSettings(fmmode, dtmf)
+        if self.MODEL in H3_LIST:
+            bluetooth = RadioSettingGroup("bluetooth", "Bluetooth")
+
         group = RadioSettings(basic)
+
+        if self.MODEL != "RT-730":
+            rs = RadioSetting("radiomode", "Radio Operating Mode",
+                              RadioSettingValueList(
+                                RADIO_MODE_LIST,
+                                current_index=(0 if _settings.ham else 1
+                                               if _settings.gmrs else 2)))
+            rs.set_warning(_(
+              'This should only be used to change the operating MODE of your '
+              'radio if you understand the legalities and implications of '
+              'doing so. The change may enable the radio to transmit on '
+              'frequencies it is not Type Accepted to do and my be in '
+              'violation of FCC and other governing agency regulations.\n\n'
+              'It may make your saved image files incompatible with the radio '
+              'and non-usable until you change the radio MODE back to the '
+              'MODE in effect when the image file was saved. After the '
+              'changed image is uploaded, the radio may have to turned OFF '
+              'and back ON to have the MODE changes take full effect.\n'
+              'DO NOT attempt to edit any settings until uploading to and '
+              'downloading from the radio with the new operating MODE.'))
+            basic.append(rs)
+
+            if self.MODEL in H3_LIST:
+                group.append(bluetooth)
+                rs = RadioSetting("btstatus", "Bluetooth",
+                                  RadioSettingValueBoolean(
+                                    _bluetooth.btstatus))
+
+                bluetooth.append(rs)
 
         rs = RadioSetting("squelch", "Squelch Level",
                           RadioSettingValueList(
@@ -1506,7 +1554,7 @@ class TDH8(chirp_common.CloneModeRadio):
 
                 if _settings.brightness not in range(0, 5):
                     LOG.warning(
-                        "brightness out of range 1 to 5. Actual value: %X. "
+                        "brightness out of range 1 to 5. Actual value: 0x%x. "
                         "Screen may not be visable",
                         _settings.brightness)
 
@@ -1528,16 +1576,50 @@ class TDH8(chirp_common.CloneModeRadio):
             rs = RadioSetting("onlychmode", "Only CH Mode",
                               RadioSettingValueBoolean(_settings.onlychmode))
             basic.append(rs)
-            rs = RadioSetting("ssidekey1", "SHORT_KEY_PF1",
-                              RadioSettingValueList(
-                                  SHORT_KEY_LIST,
-                                  current_index=_press.ssidekey1))
-            basic.append(rs)
-            rs = RadioSetting("lsidekey3", "LONG_KEY_PF1",
-                              RadioSettingValueList(
-                                  LONG_KEY_LIST,
-                                  current_index=_press.lsidekey3))
-            basic.append(rs)
+
+            if self.MODEL in H3_PLUS_LIST:
+                rs = RadioSetting("ssidekey1", "PF1 Short Press",
+                                  RadioSettingValueList(
+                                      self.SHORT_KEY_LIST,
+                                      current_index=_press.ssidekey1
+                                      if _press.ssidekey1 <= 2 else
+                                      _press.ssidekey1 - 1))
+                basic.append(rs)
+
+                rs = RadioSetting("lsidekey3", "PF1 Long Press",
+                                  RadioSettingValueList(
+                                      self.LONG_KEY_LIST,
+                                      current_index=_press.lsidekey3
+                                      if _press.ssidekey1 < 7 else 0))
+                basic.append(rs)
+
+                rs = RadioSetting("ssidekey2", "PF2 Short Press",
+                                  RadioSettingValueList(
+                                      self.SHORT_KEY_LIST,
+                                      current_index=_press.ssidekey2
+                                      if _press.ssidekey2 <= 2 else
+                                      _press.ssidekey2 - 1))
+                basic.append(rs)
+
+                rs = RadioSetting("lsidekey4", "PF2 Long Press",
+                                  RadioSettingValueList(
+                                      self.LONG_KEY_LIST,
+                                      current_index=_press.lsidekey4
+                                      if _press.ssidekey2 < 7 else 0))
+                basic.append(rs)
+
+            else:
+                rs = RadioSetting("press.ssidekey1", "SHORT_KEY_PF1",
+                                  RadioSettingValueList(
+                                      SHORT_KEY_LIST,
+                                      current_index=_press.ssidekey1))
+                basic.append(rs)
+
+                rs = RadioSetting("press.lsidekey3", "LONG_KEY_PF1",
+                                  RadioSettingValueList(
+                                      LONG_KEY_LIST,
+                                      current_index=_press.lsidekey3))
+                basic.append(rs)
 
         if self.MODEL in H8_LIST:
             rs = RadioSetting("stopkey1", "SHORT_KEY_TOP",
@@ -2170,6 +2252,10 @@ class TDH8(chirp_common.CloneModeRadio):
         _vfoa = self._memobj.vfoa
         _vfob = self._memobj.vfob
         _fmmode = self._memobj.fmmode
+        _radio = radiomode()
+
+        if self.MODEL in H3_LIST:
+            _bluetooth = self._memobj.bluetooth
 
         for element in settings:
             if not isinstance(element, RadioSetting):
@@ -2192,8 +2278,44 @@ class TDH8(chirp_common.CloneModeRadio):
                             else:
                                 obj = getattr(obj, bit)
                         setting = bits[-1]
+                    elif "radiomode" == name:
+                        obj = _radio
+                        setting = element.get_name()
+                        match int(element.value):
+                            case 0:  # ham
+                                self._ham = True
+                                _settings.gmrs = 0b0
+                                _settings.ham = 0b1
+                            case 1:  # gmrs
+                                self._gmrs = True
+                                _settings.gmrs = 0b1
+                                _settings.ham = 0b0
+                            case 2:  # normal
+                                self._ham = False
+                                self._gmrs = False
+                                _settings.gmrs = 0b0
+                                _settings.ham = 0b0
+                    elif name == "ssidekey1" and self.MODEL in H3_PLUS_LIST:
+                        _press.ssidekey1 = int(element.value) \
+                          if int(element.value) < 3 else int(element.value) + 1
+                        _press.lsidekey3 = 0x00 if int(element.value) > 5 \
+                            else _press.lsidekey3
+                    elif name == "lsidekey3" and self.MODEL in H3_PLUS_LIST:
+                        _press.lsidekey3 = 0x00 if _press.ssidekey1 > 5 \
+                          else int(element.value)
+                    elif name == "ssidekey2" and self.MODEL in H3_PLUS_LIST:
+                        _press.ssidekey2 = int(element.value) \
+                          if int(element.value) < 3 else int(element.value) + 1
+                        _press.lsidekey4 = 0x00 if _press.ssidekey2 > 5 \
+                            else _press.lsidekey4
+                    elif name == "lsidekey4" and self.MODEL in H3_PLUS_LIST:
+                        _press.lsidekey4 = 0x00 if _press.ssidekey2 > 5 \
+                          else int(element.value)
                     elif name in PRESS_NAME:
                         obj = _press
+                        setting = element.get_name()
+                    elif name == "btstatus":
+                        obj = _bluetooth
                         setting = element.get_name()
                     elif name in VFOA_NAME:
                         obj = _vfoa
@@ -2722,6 +2844,30 @@ class TDH3_GMRS(TDH3):
                 "The frequency in channels 31-54 must be between"
                 "462.55000-462.72500 in 0.025 increments."))
         return msgs
+
+
+@directory.register
+class TDH3_Plus(TDH3):
+    MODEL = "TD-H3-Plus"
+    _ponmsg_list = ["Voltage", "Message", "Picture"]
+    _save_list = ["Off", "Level 1(1:1)", "Level 2(1:2)",
+                  "Level 3(1:3)", "Level 4(1:4)"]
+    SHORT_KEY_LIST = ["None", "FM Radio", "Lamp", "TONE",
+                      "Alarm", "Weather", "PTT2", "OD PTT"]
+    LONG_KEY_LIST = ["None", "FM Radio", "Lamp", "Cancel Sq",
+                     "TONE", "Alarm", "Weather"]
+
+
+@directory.register
+@directory.detected_by(TDH3_Plus)
+class TDH3_Plus_HAM(TDH3_HAM, TDH3_Plus):
+    MODEL = "TD-H3-Plus-HAM"
+
+
+@directory.register
+@directory.detected_by(TDH3_Plus)
+class TDH3_Plus_GMRS(TDH3_GMRS, TDH3_Plus):
+    MODEL = "TD-H3-Plus-GMRS"
 
 
 @directory.register
