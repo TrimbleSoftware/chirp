@@ -779,7 +779,7 @@ B_BAND = ["Wide", "Narrow"]
 B_WORKMODE = ["VFO", "VFO+CH", "CH Mode"]
 
 # FM
-FM_WORKMODE = ["CH", "VFO"]
+FM_WORKMODE = ["VFO", "CH"]
 FM_CHANNEL = ['%s' % x for x in range(0, 26)]
 
 # DTMF
@@ -1912,7 +1912,7 @@ class TDH8(chirp_common.CloneModeRadio):
                               current_index=_settings.fmroad))
         fmmode.append(rs)
 
-        rs = RadioSetting("fmrec", "Forbid Receive",
+        rs = RadioSetting("fmrec", "Allow Receive",
                           RadioSettingValueBoolean(_settings.fmrec))
         fmmode.append(rs)
 
