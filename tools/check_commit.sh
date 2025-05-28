@@ -73,6 +73,10 @@ done
 #    fail 'New drivers should not have match_model() implemented as it is not needed'
 #fi
 
+if grep -E '\Wprint\(' added_lines; then
+    fail 'Do not use print()'
+fi
+
 if git log ${BASE}.. --merges | grep .; then
     fail Please do not include merge commits in your PR
 fi
@@ -86,6 +90,13 @@ added_files=$(git diff --name-only --diff-filter=A ${BASE}..)
 added_py=$(git diff --name-only --diff-filter=A ${BASE}.. | grep '\.py$')
 if echo $added_py | grep -q chirp.drivers && ! echo $added_files | grep -q tests.images; then
     fail All new drivers should include a test image
+fi
+
+modified_files=$(git diff --name-only --diff-filter=M ${BASE}..)
+modified_img=$(echo "$modified_files" | grep 'tests.images')
+modified_py=$(echo "$modified_files" | grep '\.py$')
+if [ "$modified_img" -a "$modified_py" ]; then
+    fail "Change modifies an image and (potentially) a driver for a possible upgrade breakage"
 fi
 
 existing_drivers=$(git ls-tree --name-only $BASE chirp/drivers/)
