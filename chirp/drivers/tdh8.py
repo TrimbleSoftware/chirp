@@ -19,10 +19,12 @@ import logging
 
 from chirp import chirp_common, errors, util, directory, memmap
 from chirp import bitwise
-from chirp.settings import InvalidValueError, RadioSetting, \
-    RadioSettingGroup, RadioSettingValueFloat, \
-    RadioSettingValueList, RadioSettingValueBoolean, \
-    RadioSettingValueString, RadioSettings
+from chirp.settings import InvalidValueError, \
+    RadioSettings, RadioSetting, RadioSettingGroup, \
+    RadioSettingSubGroup, RadioSettingValueFloat, \
+    RadioSettingValueInteger, RadioSettingValueBoolean, \
+    RadioSettingValueString, RadioSettingValueList, \
+    RadioSettingValueMap
 from textwrap import dedent
 from chirp import bandplan_na
 
@@ -30,6 +32,7 @@ LOG = logging.getLogger(__name__)
 
 AIRBAND = (108000000, 135999999)
 MEM_FORMAT = """
+// TD-H8
 #seekto 0x0008;
 struct {
   lbcd rxfreq[4];
@@ -138,12 +141,12 @@ lbcd fmvfo[4];
 #seekto 0x1B58;
 struct {
   lbcd rxfreqa[4];
-  lbcd txfreq[4];
+  lbcd txfreqa[4];
   u8 rxtone[2];
   u8 txtone[2];
   u8 unused1;
   u8 pttid:2,
-     specialqta:1,
+     freqhop:1,
      unused3:1,
      unused4:1,
      bcl:1,
@@ -161,12 +164,12 @@ struct {
 //#seekto 0x1B68;
 struct {
   lbcd rxfreqb[4];
-  lbcd txfreq[4];
+  lbcd txfreqb[4];
   u8 rxtoneb[2];
-  u8 txtone[2];
+  u8 txtoneb[2];
   u8 unused1;
-  u8 pttid:2,
-     specialqtb:1,
+  u8 pttidb:2,
+     freqhopb:1,
      unused3:1,
      unused4:1,
      bclb:1,
@@ -214,64 +217,132 @@ struct{
 
 #seekto 0x1E38;
 struct{
-    u8 group1[7];
+    u8 group1[16];
 }group1;
 
-#seekto 0x1E48;
+//#seekto 0x1E48;
 struct{
-    u8 group2[7];
+    u8 group2[16];
 }group2;
 
-#seekto 0x1E58;
+//#seekto 0x1E58;
 struct{
-    u8 group3[7];
+    u8 group3[16];
 }group3;
 
-#seekto 0x1E68;
+//#seekto 0x1E68;
 struct{
-    u8 group4[7];
+    u8 group4[16];
 }group4;
 
-#seekto 0x1E78;
+//#seekto 0x1E78;
 struct{
-    u8 group5[7];
+    u8 group5[16];
 }group5;
 
-#seekto 0x1E88;
+//#seekto 0x1E88;
 struct{
-    u8 group6[7];
+    u8 group6[16];
 }group6;
 
-#seekto 0x1E98;
+//#seekto 0x1E98;
 struct{
-    u8 group7[7];
+    u8 group7[16];
 }group7;
 
-#seekto 0x1EA8;
+//#seekto 0x1EA8;
 struct{
-    u8 group8[7];
+    u8 group8[16];
 }group8;
 
 #seekto 0x1EC8;
 struct{
-    u8 scode[7];
+    u8 scode[16];
 }startcode;
 
-#seekto 0x1ED8;
+//#seekto 0x1ED8;
 struct{
-    u8 ecode[7];
+    u8 ecode[16];
 }endcode;
+
+#seekto 0x1f0a;
+struct{
+  u8 rpste;
+  u8 rptrl;
+} rpt;
+
+#seekto 0x1f28;
+struct{
+  u8 micgain;
+} mic;
+
+#seekto 0x1f38;
+struct{
+  u8 unused1:7,
+     btstatus:1;
+} bluetooth;
+
+#seekto 0x1f58;
+struct{
+  u8 low136;
+  u8 low140;
+  u8 low150;
+  u8 low160;
+  u8 low170;
+  u8 low400;
+  u8 low410;
+  u8 low420;
+  u8 low430;
+  u8 low440;
+  u8 low450;
+  u8 low460;
+  u8 low470;
+  u8 low245;
+  u8 unusedlow[2];
+  u8 mid136;
+  u8 mid140;
+  u8 mid150;
+  u8 mid160;
+  u8 mid170;
+  u8 mid400;
+  u8 mid410;
+  u8 mid420;
+  u8 mid430;
+  u8 mid440;
+  u8 mid450;
+  u8 mid460;
+  u8 mid470;
+  u8 mid245;
+  u8 unusedmid[2];
+  u8 hig136;
+  u8 hig140;
+  u8 hig150;
+  u8 hig160;
+  u8 hig170;
+  u8 hig400;
+  u8 hig410;
+  u8 hig420;
+  u8 hig430;
+  u8 hig440;
+  u8 hig450;
+  u8 hig460;
+  u8 hig470;
+  u8 hig245;
+  u8 unusedhig[2];
+} powertune;
 
 """
 
+
 MEM_FORMAT_H3 = """
+// TD-H3, TD-H3 Plus
 #seekto 0x0008;
 struct {
   lbcd rxfreq[4];
   lbcd txfreq[4];
   lbcd rxtone[2];
   lbcd txtone[2];
-  u8 unused1;
+  u8 scramble;
   u8 pttid:2,
      freqhop:1,
      unused3:1,
@@ -280,7 +351,7 @@ struct {
      unused5:1,
      unused2:1;
   u8 unused6:1,
-     scramble:1,
+     unused1:1,
      lowpower:2,
      wide:1,
      unused8:1,
@@ -401,59 +472,59 @@ struct{
     u8 idcode[3];
 }icode;
 
-#seekto 0x1837;
+#seekto 0x1831;
 struct{
     u8 gcode;
 }groupcode;
 
-//#seekto 0x1838;
+#seekto 0x1838;
 struct{
-    u8 group1[7];
+    u8 group1[16];
 }group1;
 
-#seekto 0x1848;
+// #seekto 0x1848;
 struct{
-    u8 group2[7];
+    u8 group2[16];
 }group2;
 
-#seekto 0x1858;
+// #seekto 0x1858;
 struct{
-    u8 group3[7];
+    u8 group3[16];
 }group3;
 
-#seekto 0x1868;
+// #seekto 0x1868;
 struct{
-    u8 group4[7];
+    u8 group4[16];
 }group4;
 
-#seekto 0x1878;
+// #seekto 0x1878;
 struct{
-    u8 group5[7];
+    u8 group5[16];
 }group5;
 
-#seekto 0x1888;
+// #seekto 0x1888;
 struct{
-    u8 group6[7];
+    u8 group6[16];
 }group6;
 
-#seekto 0x1898;
+// #seekto 0x1898;
 struct{
-    u8 group7[7];
+    u8 group7[16];
 }group7;
 
-#seekto 0x18A8;
+// #seekto 0x18A8;
 struct{
-    u8 group8[7];
+    u8 group8[16];
 }group8;
 
 #seekto 0x18C8;
 struct{
-    u8 scode[7];
+    u8 scode[16];
 }startcode;
 
-#seekto 0x18D8;
+//#seekto 0x18D8;
 struct{
-    u8 ecode[7];
+    u8 ecode[16];
 }endcode;
 
 #seekto 0x1908;
@@ -468,12 +539,12 @@ lbit fmusedflags[32];
 #seekto 0x1958;
 struct {
   lbcd rxfreqa[4];
-  lbcd txfreq[4];
+  lbcd txfreqa[4];
   u8 rxtone[2];
   u8 txtone[2];
-  u8 unused1;
+  u8 scramble;
   u8 pttid:2,
-     specialqta:1,
+     freqhop:1,
      unused3:1,
      unused4:1,
      bcl:1,
@@ -491,12 +562,12 @@ struct {
 //#seekto 0x1968;
 struct {
   lbcd rxfreqb[4];
-  lbcd txfreq[4];
+  lbcd txfreqb[4];
   u8 rxtoneb[2];
-  u8 txtone[2];
-  u8 unused1;
-  u8 pttid:2,
-     specialqtb:1,
+  u8 txtoneb[2];
+  u8 scrambleb;
+  u8 pttidb:2,
+     freqhopb:1,
      unused3:1,
      unused4:1,
      bclb:1,
@@ -521,6 +592,12 @@ struct {
   char msg3[16];
 } poweron_msg;
 
+#seekto 0x1f0a;
+struct{
+  u8 rpste;
+  u8 rptrl;
+} rpt;
+
 #seekto 0x1f28;
 struct{
   u8 micgain;
@@ -532,9 +609,45 @@ struct{
      btstatus:1;
 } bluetooth;
 
+#seekto 0x1f58;
+struct{
+  u8 low136;
+  u8 low140;
+  u8 low150;
+  u8 low160;
+  u8 low170;
+  u8 low400;
+  u8 low410;
+  u8 low420;
+  u8 low430;
+  u8 low440;
+  u8 low450;
+  u8 low460;
+  u8 low470;
+  u8 low245;
+  u8 unusedlow[2];
+  u8 unusedmid[16];
+  u8 hig136;
+  u8 hig140;
+  u8 hig150;
+  u8 hig160;
+  u8 hig170;
+  u8 hig400;
+  u8 hig410;
+  u8 hig420;
+  u8 hig430;
+  u8 hig440;
+  u8 hig450;
+  u8 hig460;
+  u8 hig470;
+  u8 hig245;
+  u8 unusedhig[2];
+} powertune;
+
 """
 
 MEM_FORMAT_RT730 = """
+// RT-730
 #seekto 0x0008;
 struct {
   lbcd rxfreq[4];
@@ -646,7 +759,7 @@ lbcd fmvfo[4];
 #seekto 0x1B58;
 struct {
   lbcd rxfreqa[4];
-  lbcd txfreq[4];
+  lbcd txfreqa[4];
   u8 rxtone[2];
   u8 txtone[2];
   u8 unused1;
@@ -669,9 +782,9 @@ struct {
 //#seekto 0x1B68;
 struct {
   lbcd rxfreqb[4];
-  lbcd txfreq[4];
+  lbcd txfreqb[4];
   u8 rxtoneb[2];
-  u8 txtone[2];
+  u8 txtoneb[2];
   u8 unused1;
   u8 pttid:2,
      specialqtb:1,
@@ -706,7 +819,6 @@ LIGHT730_LIST = ["CONT", "10s", "20s", "30s"]
 MDFA_LIST = ["Frequency", "Name"]
 MDFB_LIST = ["Frequency", "Name"]
 HOP_LIST = ["A", "B", "C", "D"]
-LANG_LIST = ["Chinese", "English"]
 SCAN_MODE_LIST = ["TO", "CO", "SE"]
 PRIO_LIST = ["Edit", "Busy"]
 SHORT_KEY_LIST = ["None", "FM Radio", "Lamp", "Monitor",
@@ -720,22 +832,24 @@ PRESS_NAME = ["stopkey1", "ssidekey1", "ssidekey2",
               "ltopkey2", "lsidekey3", "lsidekey4"]
 
 VFOA_NAME = ["rxfreqa",
-             "txfreq",
-             "rxtone",
-             "txtone",
+             "txfreqa",
+             #  "rxtone",
+             #  "txtone",
+             "scramble",
              "pttid",
-             "specialqta",
+             "freqhop",
              "bcl",
              "lowpower",
              "wide",
              "offset"]
 
 VFOB_NAME = ["rxfreqb",
-             "txfreq",
-             "rxtoneb",
-             "txtone",
-             "pttid",
-             "specialqtb",
+             "txfreqb",
+             #  "rxtoneb",
+             #  "txtoneb",
+             "scrambleb",
+             "pttidb",
+             "freqhopb",
              "bclb",
              "lowpowerb",
              "wideb",
@@ -789,23 +903,21 @@ FM_WORKMODE = ["VFO", "CH"]
 FM_CHANNEL = ['%s' % x for x in range(0, 26)]
 
 # DTMF
-GROUPCODE = ["", "Off", "*", "#", "A", "B", "C", "D"]
+GROUPCODE_MAP = [("", 0x00), ("Off", 0xff), ("*", 0x0e), ("#", 0x0f),
+                 ("A", 0x0a), ("B", 0x0b), ("C", 0x0c), ("D", 0x0d)]
 
 AB_LIST = ["A", "B"]
 BANDWIDTH_LIST = ["Wide", "Narrow"]
 PTTID_LIST = ["Off", "BOT", "EOT", "Both"]
 RTONE_LIST = ["1000 Hz", "1450 Hz", "1750 Hz", "2100 Hz"]
 SCODE_LIST = ["%s" % x for x in range(1, 16)]
-STEPS = [2.5, 5.0, 6.25, 10.0, 12.5, 25.0]
-STEP_LIST = [str(x) for x in STEPS]
-STEPS = [2.5, 5.0, 6.25, 10.0, 12.5, 20.0, 25.0, 50.0]
+#  STEPS = [2.5, 5.0, 6.25, 10.0, 12.5, 25.0]
+#  STEP_LIST = [str(x) for x in STEPS]
+#  STEPS = [2.5, 5.0, 6.25, 10.0, 12.5, 20.0, 25.0, 50.0]
 TIMEOUT730_LIST = ["Off"] + ["%s sec" % x for x in range(30, 240, 30)]
-# mic
-MIC_GAIN_LIST = ['%s' % x for x in range(0, 10)]
 H8_LIST = ["TD-H8", "TD-H8-HAM", "TD-H8-GMRS"]
 H3_LIST = ["TD-H3", "TD-H3-HAM", "TD-H3-GMRS"]
 H3_PLUS_LIST = ["TD-H3-Plus", "TD-H3-Plus-HAM", "TD-H3-Plus-GMRS"]
-H3_LIST = H3_LIST + H3_PLUS_LIST
 RADIO_MODE_LIST = ["HAM", "GMRS", "NORMAL"]
 
 GMRS_FREQS = bandplan_na.ALL_GMRS_FREQS
@@ -817,7 +929,7 @@ NOAA_FREQS = [162550000, 162400000, 162475000, 162425000, 162450000,
 HAM_GMRS_NAME = ["NOAA 1", "NOAA 2", "NOAA 3", "NOAA 4", "NOAA 5", "NOAA 6",
                  "NOAA 7", "NOAA 8", "NOAA 9", "NOAA 10", "NOAA 11"]
 
-ALL_MODEL = H8_LIST + H3_LIST + ["RT-730"]
+ALL_MODEL = H8_LIST + H3_LIST + H3_PLUS_LIST + ["RT-730"]
 
 TD_H8 = b"\x50\x56\x4F\x4A\x48\x1C\x14"
 TD_H3 = b"\x50\x56\x4F\x4A\x48\x5C\x14"
@@ -1013,9 +1125,11 @@ class TDH8(chirp_common.CloneModeRadio):
     MODEL = "TD-H8"
     ident_mode = b'P31183\xff\xff'
     BAUD_RATE = 38400
-    MODES = ["FM", "NFM", "AM"]
-    _memsize = 0x1eef
-    _ranges_main = [(0x0000, 0x1eef)]
+    MODES = ["FM", "NFM"]  # , "AM"] # TD-H8 dosn't have AM RX!
+    # _memsize = 0x1eef
+    # _ranges_main = [(0x0000, 0x1eef)]
+    _memsize = 0x1fef
+    _ranges_main = [(0x0000, 0x1fef)]
     _idents = [TD_H8]
     _txbands = [(136000000, 175000000), (400000000, 521000000)]
     _rxbands = []
@@ -1035,7 +1149,31 @@ class TDH8(chirp_common.CloneModeRadio):
     _ponmsg_list = ["Off", "Msg", "Icon"]
     _breath_led_list = ["Off", "5S", "10S", "15S", "30S"]
     _save_list = ["Off", "1:1", "1:2", "1:3", "1:4", "1:8"]
+    _steps = [2.5, 5.0, 6.25, 10.0, 12.5, 25.0, 50.0]
+    _step_list = ['%2.2fK' % x for x in _steps]
+    _lang_map = [("Chinese", 1), ("English", 3)]
     _save_shortname = "Power Save"
+    _fmrec_shortname = "Allow Receive"
+    _mic_gain_list = ['%02d' % x for x in range(0, 33)]
+    _rpt_delay_list = ["Off"] + ['%s' % x for x in range(1, 11)]
+
+    _code_list_ctcss = ["%2.1fHz" % x for x in sorted(chirp_common.TONES)]
+    _code_list_ctcss.insert(0, "Off")
+    _dcs = sorted(chirp_common.DTCS_CODES)
+    _code_list_dcsn = ["%03iN" % x for x in _dcs]
+    _code_list_dcsi = ["%03iI" % x for x in _dcs]
+    _code_list = _code_list_ctcss + _code_list_dcsn + _code_list_dcsi
+
+    # maps DTMF chars to binary vaules the radio uses
+    _dtmf_code_map = [('0', 0x00), ('1', 0x01), ('2', 0x02), ('3', 0x03),
+                      ('4', 0x04), ('5', 0x05), ('6', 0x06), ('7', 0x07),
+                      ('8', 0x08), ('9', 0x09), ('A', 0x0a), ('B', 0x0b),
+                      ('C', 0x0c), ('D', 0x0d), ('*', 0x0e), ('#', 0x0f)]
+    _dtmf_code_dict = {'0': 0x00, '1': 0x01, '2': 0x02, '3': 0x03,
+                       '4': 0x04, '5': 0x05, '6': 0x06, '7': 0x07,
+                       '8': 0x08, '9': 0x09, 'A': 0x0a, 'B': 0x0b,
+                       'C': 0x0c, 'D': 0x0d, '*': 0x0e, '#': 0x0f,
+                       ' ': 0xff}
 
     @classmethod
     def detect_from_serial(cls, pipe):
@@ -1090,7 +1228,7 @@ class TDH8(chirp_common.CloneModeRadio):
         rf.valid_power_levels = [x for x in self._tx_power if x]
         rf.valid_duplexes = ["", "-", "+", "split", "off"]
         rf.valid_modes = self.MODES
-        rf.valid_tuning_steps = STEPS
+        rf.valid_tuning_steps = self._steps
 
         rf.valid_bands = self._txbands + self._rxbands
         rf.valid_bands.sort()
@@ -1118,7 +1256,7 @@ class TDH8(chirp_common.CloneModeRadio):
     def get_raw_memory(self, number):
         return repr(self._memobj.memory[number])
 
-    # Encoding processing
+    # Decoding processing
     def _decode_tone(self, val):
         if val == 16665 or val == 0:
             return '', None, None
@@ -1129,7 +1267,44 @@ class TDH8(chirp_common.CloneModeRadio):
         else:
             return 'Tone', val / 10.0, None
 
-    # Decoding processing
+    # decode radio stored binary vfo tone code into human readable form
+    def _decode_vfo_tone(self, code):
+        if code[0] + (code[1] << 8) == 0xffff:  # Off
+            tone = 'Off'
+        elif 0x06 <= code[1] <= 0x25:  # CTCSS
+            tone = '%2.1fHz' % (int(hex(code[1])[2:] +
+                                    "%0.2d" % float(hex(code[0])[2:])) / 10)
+        elif code[1] & 0x40:  # DCS inverse
+            tone = hex(code[1] & ~0xc0)[2:] + hex(code[0])[2:] + 'I'
+        elif code[1] & 0x80:  # DCS normal
+            tone = hex(code[1] & ~0x80)[2:] + hex(code[0])[2:] + 'N'
+        else:
+            msg = "Invalid tone code from radio: %s" %  \
+                hex(code[0] + (code[1] << 8))
+            LOG.exception(msg)
+            raise InvalidValueError(msg)
+
+        return tone
+
+    # decode the binary coded value into a DTMF char
+    def _decode_dtmf(self, list_val, has_len_byte=False):
+        val = ""
+        len_val = 0
+        x = 1 if has_len_byte else 0
+
+        while len_val < (len(list_val) - x):
+            if list_val[len_val] != 0xff:
+                for e in self._dtmf_code_map:
+                    if e[1] == list_val[len_val]:
+                        val += e[0]
+                        break
+                len_val += 1
+            else:
+                len_val += 1
+
+        return val
+
+    # Encoding processing
     def _encode_tone(self, memval, mode, value, pol):
         if mode == "":
             memval[0].set_raw(0xFF)
@@ -1143,6 +1318,56 @@ class TDH8(chirp_common.CloneModeRadio):
             memval[1].set_bits(flag)
         else:
             raise Exception("Internal error: invalid mode `%s'" % mode)
+
+    # encode human readable vfo tone text into a radio storable
+    # binary one code 2 element array
+    def _encode_vfo_tone(self, tone):
+        code = [0] * 2
+        if tone == "Off":
+            code[0] = code[1] = 0xff
+        elif tone.endswith('Hz'):  # CTCSS
+            code[0] = int("%02d" %
+                          (float("%s" % tone[tone.index('.') - 1:
+                           tone.index('.') + 2]) * 10), 16)
+            code[1] = int(str(int(tone[:tone.index('.') - 1])), 16)
+        elif tone.endswith('I'):  # inverse DCS
+            code[0] = int(tone[1:3], 16)
+            code[1] = 0xc0 + int(tone[0:1], 16)
+        elif tone.endswith('N'):  # normal DCS
+            code[0] = int(tone[1:3], 16)
+            code[1] = 0x80 + int(tone[0:1], 16)
+        else:
+            msg = "Unknown CTCSS/DTC tone: %s" % tone
+            LOG.exception(msg)
+            raise InvalidValueError(msg)
+
+        return code
+
+    # encode the DTMF char into the binary value the radio expects
+    def _encode_dtmf(self, val, len_byte=True):
+        list_val = []
+        len_val = 0
+        code_len = 0
+        while len_val < (len(val)):
+            if val[len_val] != ' ':
+                for e in self._dtmf_code_map:
+                    if e[0] == val[len_val] or e[0] == val:
+                        list_val.append(e[1])
+                        break
+                len_val += 1
+                code_len += 1
+            else:
+                list_val.append(0xff)
+                len_val += 1
+
+        if len_byte:
+            # set len byte to 0 if all elements are 0xff
+            if all(x == 0xff for x in list_val):
+                code_len = 0
+            # DTMF seq len is stored in the last btye
+            list_val.append(code_len)
+
+        return list_val
 
     def _get_mem(self, number):
         return self._memobj.memory[number]
@@ -1268,8 +1493,14 @@ class TDH8(chirp_common.CloneModeRadio):
 
         if self.MODEL != "RT-730":
             rs = RadioSetting(
-                "freqhop", "Frequency Hop", RadioSettingValueList(
+                "freqhop", "Hopping RX", RadioSettingValueList(
                     FREQHOP_VALUES, current_index=_mem.freqhop))
+            mem.extra.append(rs)
+
+        if self.MODEL in H3_LIST + H3_PLUS_LIST:
+            rs = RadioSetting(
+                "scramble", "Scramble", RadioSettingValueList(
+                    self._scramble_list, current_index=_mem.scramble))
             mem.extra.append(rs)
 
         if chirp_common.in_range(mem.freq, self._rxbands) and \
@@ -1388,6 +1619,9 @@ class TDH8(chirp_common.CloneModeRadio):
                 elif setting.get_name() == 'freqhop':
                     setting.value = 'Off'
                     setattr(_mem, setting.get_name(), setting.value)
+                elif setting.get_name() == 'scramble':
+                    setting.value = 'Off'
+                    setattr(_mem, setting.get_name(), setting.value)
             else:
                 setattr(_mem, setting.get_name(), setting.value)
 
@@ -1415,23 +1649,22 @@ class TDH8(chirp_common.CloneModeRadio):
         _boffset = self._memobj.boffset
         _vfoa = self._memobj.vfoa
         _vfob = self._memobj.vfob
-        if self.MODEL in H3_LIST:
-            _bluetooth = self._memobj.bluetooth
 
         if self.MODEL != "RT-730":
             _gcode = self._memobj.groupcode
+            _bluetooth = self._memobj.bluetooth
+            _powertune = self._memobj.powertune
+
         _msg = self._memobj.poweron_msg
         basic = RadioSettingGroup("basic", "Basic Settings")
-        abblock = RadioSettingGroup("abblock", "A/B Channel")
+        abblock = RadioSettingGroup("abblock", "VFO A/B Channel")
         fmmode = RadioSettingGroup("fmmode", "FM")
         dtmf = RadioSettingGroup("dtmf", "DTMF")
-
-        if self.MODEL in H3_LIST:
-            bluetooth = RadioSettingGroup("bluetooth", "Bluetooth")
-
         group = RadioSettings(basic)
 
         if self.MODEL != "RT-730":
+            bluetooth = RadioSettingGroup("bluetooth", "Bluetooth")
+            powertune = RadioSettingGroup("powertune", "TX Power Tune")
             rs = RadioSetting("radiomode", "Radio Operating Mode",
                               RadioSettingValueList(
                                 RADIO_MODE_LIST,
@@ -1450,9 +1683,12 @@ class TDH8(chirp_common.CloneModeRadio):
               'and back ON to have the MODE changes take full effect.\n'
               'DO NOT attempt to edit any settings until uploading to and '
               'downloading from the radio with the new operating MODE.'))
+            rs.set_doc = "Set the Operating Mode of the radio. Operating \
+                Modes include HAM, GMRS or Normal (unlocked). Each mode has \
+                different frequency ranges and capibilities."
             basic.append(rs)
 
-            if self.MODEL in H3_LIST:
+            if self.MODEL != "RT-730":
                 group.append(bluetooth)
                 rs = RadioSetting("btstatus", "Bluetooth",
                                   RadioSettingValueBoolean(
@@ -1507,19 +1743,6 @@ class TDH8(chirp_common.CloneModeRadio):
                           RadioSettingValueBoolean(_settings.dbrx))
         basic.append(rs)
 
-        if self.MODEL != "RT-730":
-            rs = RadioSetting("astep", "A Step",
-                              RadioSettingValueList(
-                                  STEP_LIST,
-                                  current_index=_settings.astep))
-            basic.append(rs)
-
-            rs = RadioSetting("bstep", "B Step",
-                              RadioSettingValueList(
-                                  STEP_LIST,
-                                  current_index=_settings.bstep))
-            basic.append(rs)
-
         rs = RadioSetting("scanmode", "Scan Mode",
                           RadioSettingValueList(
                               SCAN_MODE_LIST,
@@ -1544,7 +1767,7 @@ class TDH8(chirp_common.CloneModeRadio):
                                     _settings.rogerprompt))
                 basic.append(rs)
 
-            if self.MODEL in H3_LIST:
+            if self.MODEL in H3_LIST + H3_PLUS_LIST:
                 # H3 uses roger-beep list
                 rs = RadioSetting("rogerprompt", "Roger",
                                   RadioSettingValueList(
@@ -1559,9 +1782,9 @@ class TDH8(chirp_common.CloneModeRadio):
                         _settings.brightness)
 
                 rs = RadioSetting("brightness", "Brightness",
-                                  RadioSettingValueList(
-                                      self._brightness_list,
-                                      current_index=4 - _settings.brightness))
+                                  RadioSettingValueMap(
+                                      self._brightness_map,
+                                      _settings.brightness))
                 basic.append(rs)
 
         rs = RadioSetting("txled", "Disp Lcd(TX)",
@@ -1579,11 +1802,9 @@ class TDH8(chirp_common.CloneModeRadio):
 
             if self.MODEL in H3_PLUS_LIST:
                 rs = RadioSetting("ssidekey1", "PF1 Short Press",
-                                  RadioSettingValueList(
-                                      self.SHORT_KEY_LIST,
-                                      current_index=_press.ssidekey1
-                                      if _press.ssidekey1 <= 2 else
-                                      _press.ssidekey1 - 1))
+                                  RadioSettingValueMap(
+                                      self._short_key_map,
+                                      _press.ssidekey1))
                 basic.append(rs)
 
                 rs = RadioSetting("lsidekey3", "PF1 Long Press",
@@ -1594,11 +1815,9 @@ class TDH8(chirp_common.CloneModeRadio):
                 basic.append(rs)
 
                 rs = RadioSetting("ssidekey2", "PF2 Short Press",
-                                  RadioSettingValueList(
-                                      self.SHORT_KEY_LIST,
-                                      current_index=_press.ssidekey2
-                                      if _press.ssidekey2 <= 2 else
-                                      _press.ssidekey2 - 1))
+                                  RadioSettingValueMap(
+                                      self._short_key_map,
+                                      _press.ssidekey2))
                 basic.append(rs)
 
                 rs = RadioSetting("lsidekey4", "PF2 Long Press",
@@ -1646,33 +1865,21 @@ class TDH8(chirp_common.CloneModeRadio):
                                 current_index=_press.lsidekey4))
             basic.append(rs)
 
-            rs = RadioSetting("tailclean", "Squelch Tail Elimination",
-                              RadioSettingValueBoolean(_settings.tailclean))
-            basic.append(rs)
-
-        if self.MODEL in H3_LIST:
+        if self.MODEL != "RT-730":
             rs = RadioSetting("tonevoice", "Repeater Tone",
                               RadioSettingValueList(
                                   RTONE_LIST,
                                   current_index=_settings.tonevoice))
             basic.append(rs)
 
-            rs = RadioSetting("tailclean", "QT/DQT Tail",
-                              RadioSettingValueBoolean(_settings.tailclean))
-            basic.append(rs)
-
-            rs = RadioSetting("fmrec", "Bandwidth",
-                              RadioSettingValueList(
-                                BANDWIDTH_LIST,
-                                current_index=_settings.fmrec))
-            basic.append(rs)
-
+        if self.MODEL in H3_PLUS_LIST + H8_LIST:
             rs = RadioSetting("lang", "Language",
-                              RadioSettingValueList(
-                                  LANG_LIST,
-                                  current_index=_settings.lang))
+                              RadioSettingValueMap(
+                                  self._lang_map,
+                                  _settings.lang))
             basic.append(rs)
 
+        if self.MODEL in H3_LIST + H3_PLUS_LIST:
             rs = RadioSetting("alarm", "Alarm Mode",
                               RadioSettingValueList(
                                 ALARM_LIST,
@@ -1735,12 +1942,31 @@ class TDH8(chirp_common.CloneModeRadio):
             basic.append(rs)
 
             # mic gain
-            if self.MODEL not in H8_LIST:
-                _mic = self._memobj.mic
-                rs = RadioSetting("micgain", "MIC GAIN",
+            _mic = self._memobj.mic
+            rs = RadioSetting("micgain", "MIC GAIN",
+                              RadioSettingValueList(
+                                  self._mic_gain_list,
+                                  current_index=_mic.micgain))
+            basic.append(rs)
+
+            if self.MODEL in H3_LIST + H8_LIST:
+                rs = RadioSetting("tailclean", "Squelch TAIL Elimination",
+                                  RadioSettingValueBoolean(
+                                      _settings.tailclean))
+                basic.append(rs)
+
+                _rpt = self._memobj.rpt
+                rs = RadioSetting("rpste",
+                                  "Repeater Squelch TAIL Elimination Delay",
                                   RadioSettingValueList(
-                                      MIC_GAIN_LIST,
-                                      current_index=_mic.micgain))
+                                      self._rpt_delay_list,
+                                      current_index=_rpt.rpste))
+                basic.append(rs)
+
+                rs = RadioSetting("rptrl", "Repeater Squelch TAIL Tone Delay",
+                                  RadioSettingValueList(
+                                      self._rpt_delay_list,
+                                      current_index=_rpt.rptrl))
                 basic.append(rs)
 
             if self.MODEL not in H8_LIST:
@@ -1789,14 +2015,14 @@ class TDH8(chirp_common.CloneModeRadio):
 
             rs = RadioSetting("press.rogerprompt", "Roger",
                               RadioSettingValueList(
-                                  PTTID_LIST,
+                                  PTTID_VALUES,
                                   current_index=_press.rogerprompt))
             basic.append(rs)
 
             rs = RadioSetting("lang", "Language",
-                              RadioSettingValueList(
-                                  LANG_LIST,
-                                  current_index=_settings.lang))
+                              RadioSettingValueMap(
+                                  self._lang_map,
+                                  _settings.lang))
             basic.append(rs)
 
             rs = RadioSetting("save", "Battery Save",
@@ -1853,6 +2079,10 @@ class TDH8(chirp_common.CloneModeRadio):
         if self.MODEL != "RT-730":
             group.append(abblock)
 
+            # VFO A channel sub menu
+            achannel = RadioSettingSubGroup("achannel", "VFO A Channel")
+            abblock.append(achannel)
+
             # A channel
             a_freq = int(_vfoa.rxfreqa)
             freqa = "%i.%05i" % (a_freq / 100000, a_freq % 100000)
@@ -1861,7 +2091,7 @@ class TDH8(chirp_common.CloneModeRadio):
             else:
                 val1a = RadioSettingValueFloat(
                     136, 520, float(freqa), 0.00001, 5)
-            rs = RadioSetting("rxfreqa", "A Channel - Frequency", val1a)
+            rs = RadioSetting("rxfreqa", "Frequency", val1a)
             abblock.append(rs)
 
             # Offset
@@ -1873,18 +2103,17 @@ class TDH8(chirp_common.CloneModeRadio):
             for i in range(a_set_list, -1, -1):
                 real_val += str(a_set_val[i])[2:]
             if real_val == "FFFFFFFF":
-                rs = RadioSetting("ofseta", "A Offset Frequency",
+                rs = RadioSetting("ofseta", "Offset",
                                   RadioSettingValueString(0, 7, ""))
-
             else:
                 real_val = int(real_val)
                 real_val = "%i.%05i" % (real_val / 100000, real_val % 100000)
-                rs = RadioSetting("ofseta", "A Offset Frequency",
+                rs = RadioSetting("ofseta", "Offset",
                                   RadioSettingValueFloat(
                                       0.00000, 59.99750, real_val, 0.00001, 5))
             abblock.append(rs)
 
-            rs = RadioSetting("offset", "A Offset",
+            rs = RadioSetting("offset", "Offset Direction",
                               RadioSettingValueList(
                                   A_OFFSET, current_index=_vfoa.offset))
             abblock.append(rs)
@@ -1894,30 +2123,74 @@ class TDH8(chirp_common.CloneModeRadio):
                 cur_a_power = _vfoa.lowpower
             except IndexError:
                 cur_a_power = 0
-            rs = RadioSetting("lowpower", "A TX Power",
+            rs = RadioSetting("lowpower", "TX Power",
                               RadioSettingValueList(
                                 [str(x) for x in self._tx_power],
                                 current_index=cur_a_power))
             abblock.append(rs)
 
-            rs = RadioSetting("wide", "A Band",
+            rs = RadioSetting("wide", "Bandwidth",
                               RadioSettingValueList(
                                   A_BAND, current_index=_vfoa.wide))
             abblock.append(rs)
 
-            rs = RadioSetting("bcl", "A Busy Lock",
+            rs = RadioSetting("astep", "Tuning Step",
+                              RadioSettingValueList(
+                                  self._step_list,
+                                  current_index=_settings.astep))
+            abblock.append(rs)
+
+            rs = RadioSetting("rxtone", "RX CTCSS/DCS",
+                              RadioSettingValueList(
+                                  self._code_list,
+                                  current_index=self._code_list.index(
+                                      self._decode_vfo_tone(_vfoa.rxtone))))
+            abblock.append(rs)
+
+            rs = RadioSetting("txtone", "TX CTCSS/DCS",
+                              RadioSettingValueList(
+                                  self._code_list,
+                                  current_index=self._code_list.index(
+                                      self._decode_vfo_tone(_vfoa.txtone))))
+            abblock.append(rs)
+
+            if self.MODEL in H8_LIST + H3_LIST:
+                rs = RadioSetting(
+                    "pttid", "PTT ID",
+                    RadioSettingValueList(
+                        PTTID_VALUES,
+                        current_index=_vfoa.pttid
+                    )
+                )
+                abblock.append(rs)
+
+            rs = RadioSetting("bcl", "Busy Lock",
                               RadioSettingValueBoolean(_settings.ablock))
             abblock.append(rs)
 
-            rs = RadioSetting("specialqta", "A Special QT/DQT",
-                              RadioSettingValueBoolean(_vfoa.specialqta))
+            rs = RadioSetting("freqhop", "Hopping RX",
+                              RadioSettingValueBoolean(_vfoa.freqhop))
             abblock.append(rs)
 
+            if self.MODEL in H3_LIST + H3_PLUS_LIST:
+                rs = RadioSetting(
+                    "scramble", "Scramble",
+                    RadioSettingValueList(
+                        self._scramble_list,
+                        current_index=_vfoa.scramble
+                    )
+                )
+                abblock.append(rs)
+
             rs = RadioSetting(
-                "aworkmode", "A Work Mode",
+                "aworkmode", "Work Mode",
                 RadioSettingValueList(
                     A_WORKMODE, current_index=_settings.aworkmode))
             abblock.append(rs)
+
+            # VFO B channel sub menu
+            bchannel = RadioSettingSubGroup("bchannel", "VFO B Channel")
+            abblock.append(bchannel)
 
             # B channel
             b_freq = int(str(int(_vfob.rxfreqb)).ljust(8, '0'))
@@ -1927,7 +2200,7 @@ class TDH8(chirp_common.CloneModeRadio):
             else:
                 val1a = RadioSettingValueFloat(
                     136, 520, float(freqb), 0.00001, 5)
-            rs = RadioSetting("rxfreqb", "B Channel - Frequency", val1a)
+            rs = RadioSetting("rxfreqb", "Frequency", val1a)
             abblock.append(rs)
 
             # Offset frequency
@@ -1940,17 +2213,17 @@ class TDH8(chirp_common.CloneModeRadio):
             for i in range(b_set_list, -1, -1):
                 real_val += str(b_set_val[i])[2:]
             if real_val == "FFFFFFFF":
-                rs = RadioSetting("ofsetb", "B Offset Frequency",
-                                  RadioSettingValueString(0, 7, " "))
+                rs = RadioSetting("ofsetb", "Offset",
+                                  RadioSettingValueString(0, 7, ""))
             else:
                 real_val = int(real_val)
                 real_val = "%i.%05i" % (real_val / 100000, real_val % 100000)
-                rs = RadioSetting("ofsetb", "B Offset Frequency",
+                rs = RadioSetting("ofsetb", "Offset",
                                   RadioSettingValueFloat(
                                       0.00000, 59.99750, real_val, 0.00001, 5))
             abblock.append(rs)
 
-            rs = RadioSetting("offsetb", "B Offset",
+            rs = RadioSetting("offsetb", "Offset Direction",
                               RadioSettingValueList(
                                   B_OFFSET, current_index=_vfob.offsetb))
             abblock.append(rs)
@@ -1960,27 +2233,67 @@ class TDH8(chirp_common.CloneModeRadio):
                 cur_b_power = _vfob.lowpowerb
             except IndexError:
                 cur_b_power = 0
-            rs = RadioSetting("lowpowerb", "B TX Power",
+            rs = RadioSetting("lowpowerb", "TX Power",
                               RadioSettingValueList(
                                 [str(x) for x in self._tx_power],
                                 current_index=cur_b_power))
             abblock.append(rs)
 
-            rs = RadioSetting("wideb", "B Band",
+            rs = RadioSetting("wideb", "Bandwidth",
                               RadioSettingValueList(
                                   B_BAND, current_index=_vfob.wideb))
             abblock.append(rs)
 
-            rs = RadioSetting("bclb", "B Busy Lock",
+            rs = RadioSetting("bstep", "Tuning Step",
+                              RadioSettingValueList(
+                                  self._step_list,
+                                  current_index=_settings.bstep))
+            abblock.append(rs)
+
+            rs = RadioSetting("rxtoneb", "RX CTCSS/DCS",
+                              RadioSettingValueList(
+                                  self._code_list,
+                                  current_index=self._code_list.index(
+                                      self._decode_vfo_tone(_vfob.rxtoneb))))
+            abblock.append(rs)
+
+            rs = RadioSetting("txtoneb", "TX CTCSS/DCS",
+                              RadioSettingValueList(
+                                  self._code_list,
+                                  current_index=self._code_list.index(
+                                      self._decode_vfo_tone(_vfob.txtoneb))))
+            abblock.append(rs)
+
+            if self.MODEL in H8_LIST + H3_LIST:
+                rs = RadioSetting(
+                    "pttidb", "PTT ID",
+                    RadioSettingValueList(
+                        PTTID_VALUES,
+                        current_index=_vfob.pttidb
+                    )
+                )
+                abblock.append(rs)
+
+            rs = RadioSetting("bclb", "Busy Lock",
                               RadioSettingValueBoolean(_settings.bblock))
             abblock.append(rs)
 
-            rs = RadioSetting("specialqtb", "B Special QT/DQT",
-                              RadioSettingValueBoolean(_vfob.specialqtb))
+            rs = RadioSetting("freqhopb", "Hopping RX",
+                              RadioSettingValueBoolean(_vfob.freqhopb))
             abblock.append(rs)
 
+            if self.MODEL in H3_LIST + H3_PLUS_LIST:
+                rs = RadioSetting(
+                    "scrambleb", "Scramble",
+                    RadioSettingValueList(
+                        self._scramble_list,
+                        current_index=_vfob.scrambleb
+                    )
+                )
+                abblock.append(rs)
+
             rs = RadioSetting(
-                "bworkmode", "B Work Mode",
+                "bworkmode", "Work Mode",
                 RadioSettingValueList(
                     B_WORKMODE, current_index=_settings.bworkmode))
             abblock.append(rs)
@@ -1999,7 +2312,11 @@ class TDH8(chirp_common.CloneModeRadio):
                               current_index=_settings.fmroad))
         fmmode.append(rs)
 
+<<<<<<< Updated upstream
         rs = RadioSetting("fmrec", "Allow Receive",
+=======
+        rs = RadioSetting("fmrec", self._fmrec_shortname,
+>>>>>>> Stashed changes
                           RadioSettingValueBoolean(_settings.fmrec))
         fmmode.append(rs)
 
@@ -2038,143 +2355,86 @@ class TDH8(chirp_common.CloneModeRadio):
             group.append(dtmf)
 
             # DTMF
-            gcode_val = str(_gcode.gcode)[2:]
-            if gcode_val == "FF":
-                gcode_val = "Off"
-            elif gcode_val == "0F":
-                gcode_val = "#"
-            elif gcode_val == "0E":
-                gcode_val = "*"
-            elif gcode_val == '00':
-                gcode_val = ""
-            else:
-                gcode_val = gcode_val[1]
-            rs = RadioSetting(
-                    "gcode", "Group Code",
-                    RadioSettingValueList(
-                        GROUPCODE,
-                        current_index=GROUPCODE.index(gcode_val)))
+            rs = RadioSetting("gcode", "Group Code",
+                              RadioSettingValueMap(
+                                GROUPCODE_MAP, _gcode.gcode))
             dtmf.append(rs)
 
+            dtmfcharsani = "0123456789ABCD*# "
             icode_list = self._memobj.icode.idcode
-            used_icode = ''
-            for i in icode_list:
-                if i == 0xFF:
-                    continue
-                used_icode += str(i)[3]
-            dtmfcharsani = "0123456789ABCD "
+            used_icode = self._decode_dtmf(icode_list)
             i_val = RadioSettingValueString(0, 3, used_icode)
             rs = RadioSetting("icode", "ID Code", i_val)
             i_val.set_charset(dtmfcharsani)
             dtmf.append(rs)
 
             gcode_list_1 = self._memobj.group1.group1
-            used_group1 = ''
-            for i in gcode_list_1:
-                if i == 0xFF:
-                    continue
-                used_group1 += str(i)[3]
-            group1_val = RadioSettingValueString(0, 7, used_group1)
+            used_group1 = self._decode_dtmf(gcode_list_1, True)
+            group1_val = RadioSettingValueString(0, 15, used_group1)
             rs = RadioSetting("group1", "1", group1_val)
             group1_val.set_charset(dtmfcharsani)
             dtmf.append(rs)
 
             gcode_list_2 = self._memobj.group2.group2
-            used_group2 = ''
-            for i in gcode_list_2:
-                if i == 0xFF:
-                    continue
-                used_group2 += str(i)[3]
-            group2_val = RadioSettingValueString(0, 7, used_group2)
+            used_group2 = self._decode_dtmf(gcode_list_2, True)
+            group2_val = RadioSettingValueString(0, 15, used_group2)
             rs = RadioSetting("group2", "2", group2_val)
             group2_val.set_charset(dtmfcharsani)
             dtmf.append(rs)
 
             gcode_list_3 = self._memobj.group3.group3
-            used_group3 = ''
-            for i in gcode_list_3:
-                if i == 0xFF:
-                    continue
-                used_group3 += str(i)[3]
-            group3_val = RadioSettingValueString(0, 7, used_group3)
+            used_group3 = self._decode_dtmf(gcode_list_3, True)
+            group3_val = RadioSettingValueString(0, 15, used_group3)
             rs = RadioSetting("group3", "3", group3_val)
             group3_val.set_charset(dtmfcharsani)
             dtmf.append(rs)
 
             gcode_list_4 = self._memobj.group4.group4
-            used_group4 = ''
-            for i in gcode_list_4:
-                if i == 0xFF:
-                    continue
-                used_group4 += str(i)[3]
-            group4_val = RadioSettingValueString(0, 7, used_group4)
+            used_group4 = self._decode_dtmf(gcode_list_4, True)
+            group4_val = RadioSettingValueString(0, 15, used_group4)
             rs = RadioSetting("group4", "4", group4_val)
             group4_val.set_charset(dtmfcharsani)
             dtmf.append(rs)
 
             gcode_list_5 = self._memobj.group5.group5
-            used_group5 = ''
-            for i in gcode_list_5:
-                if i == 0xFF:
-                    continue
-                used_group5 += str(i)[3]
-            group5_val = RadioSettingValueString(0, 7, used_group5)
+            used_group5 = self._decode_dtmf(gcode_list_5, True)
+            group5_val = RadioSettingValueString(0, 15, used_group5)
             rs = RadioSetting("group5", "5", group5_val)
             group5_val.set_charset(dtmfcharsani)
             dtmf.append(rs)
 
             gcode_list_6 = self._memobj.group6.group6
-            used_group6 = ''
-            for i in gcode_list_6:
-                if i == 0xFF:
-                    continue
-                used_group6 += str(i)[3]
-            group6_val = RadioSettingValueString(0, 7, used_group6)
+            used_group6 = self._decode_dtmf(gcode_list_6, True)
+            group6_val = RadioSettingValueString(0, 15, used_group6)
             rs = RadioSetting("group6", "6", group6_val)
             group6_val.set_charset(dtmfcharsani)
             dtmf.append(rs)
 
             gcode_list_7 = self._memobj.group7.group7
-            used_group7 = ''
-            for i in gcode_list_7:
-                if i == 0xFF:
-                    continue
-                used_group7 += str(i)[3]
-            group7_val = RadioSettingValueString(0, 7, used_group7)
+            used_group7 = self._decode_dtmf(gcode_list_7, True)
+            group7_val = RadioSettingValueString(0, 15, used_group7)
             rs = RadioSetting("group7", "7", group7_val)
             group7_val.set_charset(dtmfcharsani)
             dtmf.append(rs)
 
             gcode_list_8 = self._memobj.group8.group8
-            used_group8 = ''
-            for i in gcode_list_8:
-                if i == 0xFF:
-                    continue
-                used_group8 += str(i)[3]
-            group8_val = RadioSettingValueString(0, 7, used_group8)
-            rs = RadioSetting("group8", "8", group7_val)
+            used_group8 = self._decode_dtmf(gcode_list_8, True)
+            group8_val = RadioSettingValueString(0, 15, used_group8)
+            rs = RadioSetting("group8", "8", group8_val)
             group8_val.set_charset(dtmfcharsani)
             dtmf.append(rs)
 
             scode_list = self._memobj.startcode.scode
-            used_scode = ''
-            for i in scode_list:
-                if i == 0xFF:
-                    continue
-                used_scode += str(i)[3]
+            used_scode = self._decode_dtmf(scode_list, True)
             scode_val = RadioSettingValueString(0, 7, used_scode)
             rs = RadioSetting("scode", "PTT ID Starting(BOT)", scode_val)
             scode_val.set_charset(dtmfcharsani)
             dtmf.append(rs)
 
             ecode_list = self._memobj.endcode.ecode
-            used_ecode = ''
-            for i in ecode_list:
-                if i == 0xFF:
-                    continue
-                used_ecode += str(i)[3]
+            used_ecode = self._decode_dtmf(ecode_list, True)
             ecode_val = RadioSettingValueString(0, 7, used_ecode)
-            rs = RadioSetting("ecode", "PTT ID Ending(BOT)", ecode_val)
+            rs = RadioSetting("ecode", "PTT ID Ending(EOT)", ecode_val)
             dtmf.append(rs)
             if self.MODEL in H8_LIST:
                 rs = RadioSetting("dtmfst", "DTMF Side Tones",
@@ -2185,25 +2445,17 @@ class TDH8(chirp_common.CloneModeRadio):
             if self.MODEL not in H8_LIST:
                 # stuncode
                 ecode_list = self._memobj.skcode.stuncode
-                used_ecode = ''
-                for i in ecode_list:
-                    if i == 0xFF:
-                        continue
-                    used_ecode += str(i)[3]
-                ecode_val = RadioSettingValueString(0, 16, used_ecode)
+                used_ecode = self._decode_dtmf(ecode_list, True)
+                ecode_val = RadioSettingValueString(0, 15, used_ecode)
                 rs = RadioSetting("stuncode", "Stun Code", ecode_val)
                 dtmf.append(rs)
                 # killcode
                 ecode_list = self._memobj.skcode.killcode
-                used_ecode = ''
-                for i in ecode_list:
-                    if i == 0xFF:
-                        continue
-                    used_ecode += str(i)[3]
-                ecode_val = RadioSettingValueString(0, 16, used_ecode)
+                used_ecode = self._decode_dtmf(ecode_list, True)
+                ecode_val = RadioSettingValueString(0, 15, used_ecode)
                 rs = RadioSetting("killcode", "Kill Code", ecode_val)
                 dtmf.append(rs)
-            if self.MODEL in H3_LIST and \
+            if self.MODEL in H3_LIST + H3_PLUS_LIST and \
                     _settings.scanband <= len(SCAN_BAND_LIST):
                 # older firmware sets 0xCA0-0xCA7 to FF
                 # Scanband is not defined for FF
@@ -2235,6 +2487,199 @@ class TDH8(chirp_common.CloneModeRadio):
                                     current_index=_settings.dtmfspeed))
                 dtmf.append(rs)
 
+            if self.MODEL in H8_LIST + H3_LIST + H3_PLUS_LIST:
+                group.append(powertune)
+                lowpower = \
+                    RadioSettingSubGroup("lowpower",
+                                         ("Low Power: Freq. (MHz) "
+                                          "- Power Factor (0-255):"))
+                powertune.append(lowpower)
+                if self.MODEL in H8_LIST:  # only H8 has mid power
+                    midpower = \
+                        RadioSettingSubGroup("midpower",
+                                             ("Mid Power: Freq. (MHz) "
+                                              "- Power Factor (0-255):"))
+                    powertune.append(midpower)
+                higpower = \
+                    RadioSettingSubGroup("higpower",
+                                         ("High Power: Freq. (MHz) "
+                                          "- Power Factor (0-255):"))
+                powertune.append(higpower)
+
+                # low power
+                rs = RadioSetting("low136", "136-140",
+                                  RadioSettingValueInteger(
+                                      0x00, 0xff, _powertune.low136, 1))
+                lowpower.append(rs)
+                rs = RadioSetting("low140", "140-150",
+                                  RadioSettingValueInteger(
+                                      0x00, 0xff, _powertune.low140, 1))
+                lowpower.append(rs)
+                rs = RadioSetting("low150", "150-160",
+                                  RadioSettingValueInteger(
+                                      0x00, 0xff, _powertune.low150, 1))
+                lowpower.append(rs)
+                rs = RadioSetting("low160", "160-170",
+                                  RadioSettingValueInteger(
+                                      0x00, 0xff, _powertune.low160, 1))
+                lowpower.append(rs)
+                rs = RadioSetting("low170", "170-",
+                                  RadioSettingValueInteger(
+                                        0x00, 0xff, _powertune.low170, 1))
+                lowpower.append(rs)
+                rs = RadioSetting("low400", "400-410",
+                                  RadioSettingValueInteger(
+                                        0x00, 0xff, _powertune.low400, 1))
+                lowpower.append(rs)
+                rs = RadioSetting("low410", "410-420",
+                                  RadioSettingValueInteger(
+                                        0x00, 0xff, _powertune.low410, 1))
+                lowpower.append(rs)
+                rs = RadioSetting("low420", "420-430",
+                                  RadioSettingValueInteger(
+                                        0x00, 0xff, _powertune.low420, 1))
+                lowpower.append(rs)
+                rs = RadioSetting("low430", "430-440",
+                                  RadioSettingValueInteger(
+                                        0x00, 0xff, _powertune.low430, 1))
+                lowpower.append(rs)
+                rs = RadioSetting("low440", "440-450",
+                                  RadioSettingValueInteger(
+                                        0x00, 0xff, _powertune.low440, 1))
+                lowpower.append(rs)
+                rs = RadioSetting("low450", "450-460",
+                                  RadioSettingValueInteger(
+                                        0x00, 0xff, _powertune.low450, 1))
+                lowpower.append(rs)
+                rs = RadioSetting("low460", "460-470",
+                                  RadioSettingValueInteger(
+                                        0x00, 0xff, _powertune.low460, 1))
+                lowpower.append(rs)
+                rs = RadioSetting("low470", "470-",
+                                  RadioSettingValueInteger(
+                                        0x00, 0xff, _powertune.low470, 1))
+                lowpower.append(rs)
+                rs = RadioSetting("low245", "245",
+                                  RadioSettingValueInteger(
+                                        0x00, 0xff, _powertune.low245, 1))
+                lowpower.append(rs)
+
+                if self.MODEL in H8_LIST:  # only H8 has mid power
+                    rs = RadioSetting("mid136", "136-140",
+                                      RadioSettingValueInteger(
+                                            0x00, 0xff, _powertune.mid136, 1))
+                    midpower.append(rs)
+                    rs = RadioSetting("mid140", "140-150",
+                                      RadioSettingValueInteger(
+                                            0x00, 0xff, _powertune.mid140, 1))
+                    midpower.append(rs)
+                    rs = RadioSetting("mid150", "150-160",
+                                      RadioSettingValueInteger(
+                                            0x00, 0xff, _powertune.mid150, 1))
+                    midpower.append(rs)
+                    rs = RadioSetting("mid160", "160-170",
+                                      RadioSettingValueInteger(
+                                            0x00, 0xff, _powertune.mid160, 1))
+                    midpower.append(rs)
+                    rs = RadioSetting("mid170", "170-",
+                                      RadioSettingValueInteger(
+                                            0x00, 0xff, _powertune.mid170, 1))
+                    midpower.append(rs)
+                    rs = RadioSetting("mid400", "400-410",
+                                      RadioSettingValueInteger(
+                                            0x00, 0xff, _powertune.mid400, 1))
+                    midpower.append(rs)
+                    rs = RadioSetting("mid410", "410-420",
+                                      RadioSettingValueInteger(
+                                            0x00, 0xff, _powertune.mid410, 1))
+                    midpower.append(rs)
+                    rs = RadioSetting("mid420", "420-430",
+                                      RadioSettingValueInteger(
+                                            0x00, 0xff, _powertune.mid420, 1))
+                    midpower.append(rs)
+                    rs = RadioSetting("mid430", "430-440",
+                                      RadioSettingValueInteger(
+                                            0x00, 0xff, _powertune.mid430, 1))
+                    midpower.append(rs)
+                    rs = RadioSetting("mid440", "440-450",
+                                      RadioSettingValueInteger(
+                                            0x00, 0xff, _powertune.mid440, 1))
+                    midpower.append(rs)
+                    rs = RadioSetting("mid450", "450-460",
+                                      RadioSettingValueInteger(
+                                            0x00, 0xff, _powertune.mid450, 1))
+                    midpower.append(rs)
+                    rs = RadioSetting("mid460", "460-470",
+                                      RadioSettingValueInteger(
+                                            0x00, 0xff, _powertune.mid460, 1))
+                    midpower.append(rs)
+                    rs = RadioSetting("mid470", "470-",
+                                      RadioSettingValueInteger(
+                                            0x00, 0xff, _powertune.mid470, 1))
+                    midpower.append(rs)
+                    rs = RadioSetting("mid245", "245",
+                                      RadioSettingValueInteger(
+                                            0x00, 0xff, _powertune.mid245, 1))
+                    midpower.append(rs)
+
+                # high power
+                rs = RadioSetting("hig136", "136-140",
+                                  RadioSettingValueInteger(
+                                        0x00, 0xff, _powertune.hig136, 1))
+                higpower.append(rs)
+                rs = RadioSetting("hig140", "140-150",
+                                  RadioSettingValueInteger(
+                                        0x00, 0xff, _powertune.hig140, 1))
+                higpower.append(rs)
+                rs = RadioSetting("hig150", "150-160",
+                                  RadioSettingValueInteger(
+                                        0x00, 0xff, _powertune.hig150, 1))
+                higpower.append(rs)
+                rs = RadioSetting("hig160", "160-170",
+                                  RadioSettingValueInteger(
+                                        0x00, 0xff, _powertune.hig160, 1))
+                higpower.append(rs)
+                rs = RadioSetting("hig170", "170-",
+                                  RadioSettingValueInteger(
+                                        0x00, 0xff, _powertune.hig170, 1))
+                higpower.append(rs)
+                rs = RadioSetting("hig400", "400-410",
+                                  RadioSettingValueInteger(
+                                        0x00, 0xff, _powertune.hig400, 1))
+                higpower.append(rs)
+                rs = RadioSetting("hig410", "410-420",
+                                  RadioSettingValueInteger(
+                                        0x00, 0xff, _powertune.hig410, 1))
+                higpower.append(rs)
+                rs = RadioSetting("hig420", "420-430",
+                                  RadioSettingValueInteger(
+                                        0x00, 0xff, _powertune.hig420, 1))
+                higpower.append(rs)
+                rs = RadioSetting("hig430", "430-440",
+                                  RadioSettingValueInteger(
+                                        0x00, 0xff, _powertune.hig430, 1))
+                higpower.append(rs)
+                rs = RadioSetting("hig440", "440-450",
+                                  RadioSettingValueInteger(
+                                        0x00, 0xff, _powertune.hig440, 1))
+                higpower.append(rs)
+                rs = RadioSetting("hig450", "450-460",
+                                  RadioSettingValueInteger(
+                                        0x00, 0xff, _powertune.hig450, 1))
+                higpower.append(rs)
+                rs = RadioSetting("hig460", "460-470",
+                                  RadioSettingValueInteger(
+                                        0x00, 0xff, _powertune.hig460, 1))
+                higpower.append(rs)
+                rs = RadioSetting("hig470", "470-",
+                                  RadioSettingValueInteger(
+                                        0x00, 0xff, _powertune.hig470, 1))
+                higpower.append(rs)
+                rs = RadioSetting("hig245", "245",
+                                  RadioSettingValueInteger(
+                                        0x00, 0xff, _powertune.hig245, 1))
+                higpower.append(rs)
+
         return group
 
     def get_settings(self):
@@ -2257,10 +2702,13 @@ class TDH8(chirp_common.CloneModeRadio):
         _vfoa = self._memobj.vfoa
         _vfob = self._memobj.vfob
         _fmmode = self._memobj.fmmode
+
         _radio = radiomode()
 
-        if self.MODEL in H3_LIST:
+        if self.MODEL != "RT-730":
             _bluetooth = self._memobj.bluetooth
+        if self.MODEL in H8_LIST + H3_LIST + H3_PLUS_LIST:
+            _powertune = self._memobj.powertune
 
         for element in settings:
             if not isinstance(element, RadioSetting):
@@ -2301,16 +2749,12 @@ class TDH8(chirp_common.CloneModeRadio):
                                 _settings.gmrs = 0b0
                                 _settings.ham = 0b0
                     elif name == "ssidekey1" and self.MODEL in H3_PLUS_LIST:
-                        _press.ssidekey1 = int(element.value) \
-                          if int(element.value) < 3 else int(element.value) + 1
                         _press.lsidekey3 = 0x00 if int(element.value) > 5 \
                             else _press.lsidekey3
                     elif name == "lsidekey3" and self.MODEL in H3_PLUS_LIST:
                         _press.lsidekey3 = 0x00 if _press.ssidekey1 > 5 \
                           else int(element.value)
                     elif name == "ssidekey2" and self.MODEL in H3_PLUS_LIST:
-                        _press.ssidekey2 = int(element.value) \
-                          if int(element.value) < 3 else int(element.value) + 1
                         _press.lsidekey4 = 0x00 if _press.ssidekey2 > 5 \
                             else _press.lsidekey4
                     elif name == "lsidekey4" and self.MODEL in H3_PLUS_LIST:
@@ -2322,12 +2766,33 @@ class TDH8(chirp_common.CloneModeRadio):
                     elif name == "btstatus":
                         obj = _bluetooth
                         setting = element.get_name()
+                    elif (name.startswith("low") or
+                            name.startswith("mid") or
+                            name.startswith("hig")) and len(name) == 6:
+                        obj = _powertune
+                        setting = element.get_name()
                     elif name in VFOA_NAME:
                         obj = _vfoa
                         setting = element.get_name()
                     elif name == "ofseta":
                         obj = _aoffset
                         setting = element.get_name()
+                    elif name == "rxtone":
+                        _vfoa.rxtone = \
+                            self._encode_vfo_tone(str(element.value))
+                    elif name == "txtone":
+                        _vfoa.txtone = \
+                            self._encode_vfo_tone(str(element.value))
+                    elif name == "rxtoneb":
+                        _vfob.rxtoneb = \
+                            self._encode_vfo_tone(str(element.value))
+                    elif name == "txtoneb":
+                        _vfob.txtoneb = \
+                            self._encode_vfo_tone(str(element.value))
+                    elif name == "astep":
+                        _settings.astep = int(element.value)
+                    elif name == "bstep":
+                        _settings.bstep = int(element.value)
                     elif name in VFOB_NAME:
                         obj = _vfob
                         setting = element.get_name()
@@ -2379,6 +2844,12 @@ class TDH8(chirp_common.CloneModeRadio):
                     elif "micgain" in name:
                         obj = self._memobj.mic.micgain
                         setting = element.get_name()
+                    elif "rpste" in name:
+                        obj = self._memobj.rpt
+                        setting = element.get_name()
+                    elif "rptrl" in name:
+                        obj = self._memobj.rpt
+                        setting = element.get_name()
                     elif "killcode" in name:
                         obj = self._memobj.skcode.killcode
                         setting = element.get_name()
@@ -2391,8 +2862,6 @@ class TDH8(chirp_common.CloneModeRadio):
                     if element.has_apply_callback():
                         LOG.debug("Using apply callback")
                         element.run_apply_callback()
-                    elif "brightness" == name:
-                        _settings.brightness = 4 - int(element.value)
                     elif "sync" == name:
                         _settings.sync = not int(element.value)
                     # Channel A
@@ -2411,35 +2880,92 @@ class TDH8(chirp_common.CloneModeRadio):
                                 "or enabled in settings")
                             raise InvalidValueError(msg)
 
-                    elif "ofseta" == setting and element.value.get_mutable():
-                        if '.' in str(element.value):
-                            val = str(element.value).replace(' ', '')
-                            if len(
-                                val[val.index(".") + 1:]
-                                ) >= 1 and int(val[val.index(".") + 1:]
-                                               ) != 0:
-                                val = '00' + val.replace('.', '')
+                        def normalize_offset(value):
+                            if '.' in str(value):
+                                val = str(value).replace(' ', '')
+                                if len(
+                                    val[val.index(".") + 1:]
+                                    ) >= 1 and int(val[val.index(".") + 1:]
+                                                   ) != 0:
+                                    match len(val[:val.index('.')]):
+                                        case 0:
+                                            val = '000' + \
+                                                val.replace('.', '')
+                                        case 1:
+                                            val = '00' + \
+                                                val.replace('.', '')
+                                        case 2:
+                                            val = '0' + \
+                                                val.replace('.', '')
+                                else:
+                                    match len(val[:val.index('.')]):
+                                        case 0:
+                                            val = '000' + \
+                                                val.replace('.', '00')
+                                        case 1:
+                                            val = '00' + \
+                                                val.replace('.', '00')
+                                        case 2:
+                                            val = '0' + \
+                                                val.replace('.', '00')
+                                val = val.ljust(8, '0')
                             else:
-                                val = '0' + val.replace('.', '')
-                            val = val.ljust(8, '0')
+                                match len(value.replace(' ', '')):
+                                    case 0:
+                                        val = '0'
+                                    case 1:
+                                        val = '00' + \
+                                            str(value).replace(' ', '')
+                                    case 2:
+                                        val = '0' + \
+                                            str(value).replace(' ', '')
+                                val = val.ljust(8, '0')
+                            return val
+
+                        def calc_txfreq(rxfreq, offset, dir):
+                            # calc tx freq
+                            txfreq = 0
+                            match dir:
+                                case 0:  # off
+                                    txfreq = rxfreq
+                                case 1:  # minus
+                                    txfreq = \
+                                        (int(rxfreq) /
+                                            100000 - offset) * 100000
+                                case 2:  # plus
+                                    txfreq = \
+                                        (int(rxfreq) /
+                                            100000 + offset) * 100000
+                            return txfreq
+
+                        def encode_offset(offset):
                             lenth_val = 0
                             list_val = []
-                        else:
-                            val = '0' + str(element.value).replace(' ', '')
-                            val = val.ljust(8, '0')
-                            lenth_val = 0
-                            list_val = []
+                            while lenth_val < (len(offset)):
+                                list_val.insert(
+                                    0, offset[lenth_val:lenth_val + 2])
+                                lenth_val += 2
+                            for i in range(len(list_val)):
+                                list_val[i] = int(list_val[i], 16)
+                            return list_val
+
+                    elif "ofseta" == setting and element.value.get_mutable():
+                        val = normalize_offset(str(element.value))
                         if (int(val) >= 0 and int(val) <= 5999750):
                             if int(val) == 0:
                                 _aoffset.ofseta = [0xFF, 0xFF, 0xFF, 0xFF]
+                                _vfoa.txfreqa = int(self._memobj.vfoa.rxfreqa)
                             else:
-                                while lenth_val < (len(val)):
-                                    list_val.insert(
-                                        0, val[lenth_val:lenth_val + 2])
-                                    lenth_val += 2
-                                for i in range(len(list_val)):
-                                    list_val[i] = int(list_val[i], 16)
-                                _aoffset.ofseta = list_val
+                                _aoffset.ofseta = encode_offset(val)
+                                # calc tx freq and store
+                                _vfoa.txfreqa = \
+                                    calc_txfreq(
+                                        _vfoa.rxfreqa,
+                                        float(element.value),
+                                        int(
+                                            settings._elements['offset'].value
+                                        )
+                                    )
                         else:
                             msg = ("Offset must be between 0.00000-59.99750")
                             raise InvalidValueError(msg)
@@ -2460,37 +2986,24 @@ class TDH8(chirp_common.CloneModeRadio):
                                 "136.00000-174.00000 or 400.00000-520.00000 "
                                 "or enabled in settings")
                             raise InvalidValueError(msg)
-                        # setattr(obj, setting, val)
 
                     elif "ofsetb" == setting and element.value.get_mutable():
-                        if '.' in str(element.value):
-                            val = str(element.value).replace(' ', '')
-                            if len(val[val.index(".") + 1:]
-                                   ) >= 1 and int(val[val.index(".") + 1:]
-                                                  ) != 0:
-                                val = '00' + \
-                                    str(element.value).replace('.', '')
-                            else:
-                                val = '0' + str(element.value).replace('.', '')
-                            val = val.ljust(8, '0')
-                            lenth_val = 0
-                            list_val = []
-                        else:
-                            val = '0' + str(element.value).replace(' ', '')
-                            val = val.ljust(8, '0')
-                            lenth_val = 0
-                            list_val = []
+                        val = normalize_offset(str(element.value))
                         if (int(val) >= 0 and int(val) <= 5999750):
                             if int(val) == 0:
                                 _boffset.ofsetb = [0xFF, 0xFF, 0xFF, 0xFF]
+                                _vfob.txfreqb = int(self._memobj.vfob.rxfreqb)
                             else:
-                                while lenth_val < (len(val)):
-                                    list_val.insert(
-                                        0, val[lenth_val:lenth_val + 2])
-                                    lenth_val += 2
-                                for i in range(len(list_val)):
-                                    list_val[i] = int(list_val[i], 16)
-                                _boffset.ofsetb = list_val
+                                _boffset.ofsetb = encode_offset(val)
+                                # calc tx freq and store
+                                _vfob.txfreqb = \
+                                    calc_txfreq(
+                                        _vfob.rxfreqb,
+                                        float(element.value),
+                                        int(
+                                            settings._elements['offsetb'].value
+                                        )
+                                    )
                         else:
                             msg = ("Offset must be between 0.00000-59.99750")
                             raise InvalidValueError(msg)
@@ -2515,194 +3028,64 @@ class TDH8(chirp_common.CloneModeRadio):
                         self._memobj.fmvfo = int(element.value * 10)
 
                     elif 'gcode' == setting and element.value.get_mutable():
-                        val = str(element.value)
-                        if val == 'Off':
-                            gcode_used = 0xFF
-                        elif val == 'A':
-                            gcode_used = 0x0A
-                        elif val == 'B':
-                            gcode_used = 0x0B
-                        elif val == 'C':
-                            gcode_used = 0x0C
-                        elif val == 'D':
-                            gcode_used = 0x0D
-                        elif val == '#':
-                            gcode_used = 0x0F
-                        elif val == '*':
-                            gcode_used = 0x0E
-                        elif val == '':
-                            gcode_used = 0x00
-                        self._memobj.groupcode.gcode = gcode_used
+                        self._memobj.groupcode.gcode = element.value
 
                     elif 'icode' == setting and element.value.get_mutable():
                         val = str(element.value)
-                        list_val = []
-                        lenth_val = 0
-                        while lenth_val < (len(val)):
-                            if val[lenth_val] != ' ':
-                                list_val.append(int(val[lenth_val], 16))
-                                lenth_val += 1
-                            else:
-                                list_val.append(0xFF)
-                                lenth_val += 1
-                        self._memobj.icode.idcode = list_val
+                        self._memobj.icode.idcode = \
+                            self._encode_dtmf(val, False)
 
                     elif 'scode' == setting and element.value.get_mutable():
                         val = str(element.value)
-                        list_val = []
-                        lenth_val = 0
-                        while lenth_val < (len(val)):
-                            if val[lenth_val] != ' ':
-                                list_val.append(int(val[lenth_val], 16))
-                                lenth_val += 1
-                            else:
-                                list_val.append(0xFF)
-                                lenth_val += 1
-                        self._memobj.startcode.scode = list_val
+                        self._memobj.startcode.scode = \
+                            self._encode_dtmf(val.ljust(15, ' '), True)
 
                     elif 'ecode' == setting and element.value.get_mutable():
                         val = str(element.value)
-                        list_val = []
-                        lenth_val = 0
-                        while lenth_val < (len(val)):
-                            if val[lenth_val] != ' ':
-                                list_val.append(int(val[lenth_val], 16))
-                                lenth_val += 1
-                            else:
-                                list_val.append(0xFF)
-                                lenth_val += 1
-                        self._memobj.endcode.ecode = list_val
+                        self._memobj.endcode.ecode = \
+                            self._encode_dtmf(val.ljust(15, ' '), True)
 
                     elif 'group1' == setting and element.value.get_mutable():
                         val = str(element.value)
-                        list_val = []
-                        lenth_val = 0
-                        while lenth_val < (len(val)):
-                            if val[lenth_val] != ' ':
-                                list_val.append(int(val[lenth_val], 16))
-                                lenth_val += 1
-                            else:
-                                list_val.append(0xFF)
-                                lenth_val += 1
-                        self._memobj.group1.group1 = list_val
+                        self._memobj.group1.group1 = self._encode_dtmf(val)
 
                     elif 'group2' == setting and element.value.get_mutable():
                         val = str(element.value)
-                        list_val = []
-                        lenth_val = 0
-                        while lenth_val < (len(val)):
-                            if val[lenth_val] != ' ':
-                                list_val.append(int(val[lenth_val], 16))
-                                lenth_val += 1
-                            else:
-                                list_val.append(0xFF)
-                                lenth_val += 1
-                        self._memobj.group2.group2 = list_val
+                        self._memobj.group2.group2 = self._encode_dtmf(val)
 
                     elif 'group3' == setting and element.value.get_mutable():
                         val = str(element.value)
-                        list_val = []
-                        lenth_val = 0
-                        while lenth_val < (len(val)):
-                            if val[lenth_val] != ' ':
-                                list_val.append(int(val[lenth_val], 16))
-                                lenth_val += 1
-                            else:
-                                list_val.append(0xFF)
-                                lenth_val += 1
-                        self._memobj.group3.group3 = list_val
+                        self._memobj.group3.group3 = self._encode_dtmf(val)
 
                     elif 'group4' == setting and element.value.get_mutable():
                         val = str(element.value)
-                        list_val = []
-                        lenth_val = 0
-                        while lenth_val < (len(val)):
-                            if val[lenth_val] != ' ':
-                                list_val.append(int(val[lenth_val], 16))
-                                lenth_val += 1
-                            else:
-                                list_val.append(0xFF)
-                                lenth_val += 1
-                        self._memobj.group4.group4 = list_val
+                        self._memobj.group4.group4 = self._encode_dtmf(val)
 
                     elif 'group5' == setting and element.value.get_mutable():
                         val = str(element.value)
-                        list_val = []
-                        lenth_val = 0
-                        while lenth_val < (len(val)):
-                            if val[lenth_val] != ' ':
-                                list_val.append(int(val[lenth_val], 16))
-                                lenth_val += 1
-                            else:
-                                list_val.append(0xFF)
-                                lenth_val += 1
-                        self._memobj.group5.group5 = list_val
+                        self._memobj.group5.group5 = self._encode_dtmf(val)
 
                     elif 'group6' == setting and element.value.get_mutable():
                         val = str(element.value)
-                        list_val = []
-                        lenth_val = 0
-                        while lenth_val < (len(val)):
-                            if val[lenth_val] != ' ':
-                                list_val.append(int(val[lenth_val], 16))
-                                lenth_val += 1
-                            else:
-                                list_val.append(0xFF)
-                                lenth_val += 1
-                        self._memobj.group6.group6 = list_val
+                        self._memobj.group6.group6 = self._encode_dtmf(val)
 
                     elif 'group7' == setting and element.value.get_mutable():
                         val = str(element.value)
-                        list_val = []
-                        lenth_val = 0
-                        while lenth_val < (len(val)):
-                            if val[lenth_val] != ' ':
-                                list_val.append(int(val[lenth_val], 16))
-                                lenth_val += 1
-                            else:
-                                list_val.append(0xFF)
-                                lenth_val += 1
-                        self._memobj.group7.group7 = list_val
+                        self._memobj.group7.group7 = self._encode_dtmf(val)
 
                     elif 'group8' == setting and element.value.get_mutable():
                         val = str(element.value)
-                        list_val = []
-                        lenth_val = 0
-                        while lenth_val < (len(val)):
-                            if val[lenth_val] != ' ':
-                                list_val.append(int(val[lenth_val], 16))
-                                lenth_val += 1
-                            else:
-                                list_val.append(0xFF)
-                                lenth_val += 1
-                        self._memobj.group8.group8 = list_val
+                        self._memobj.group8.group8 = self._encode_dtmf(val)
+
                     elif setting == 'micgain':
                         self._memobj.mic.micgain = (
                             str(element.value))
                     elif 'stuncode' == setting and element.value.get_mutable():
                         val = str(element.value)
-                        list_val = []
-                        lenth_val = 0
-                        while lenth_val < (len(val)):
-                            if val[lenth_val] != ' ':
-                                list_val.append(int(val[lenth_val], 16))
-                                lenth_val += 1
-                            else:
-                                list_val.append(0xFF)
-                                lenth_val += 1
-                        self._memobj.skcode.stuncode = list_val
+                        self._memobj.skcode.stuncode = self._encode_dtmf(val)
                     elif 'killcode' == setting and element.value.get_mutable():
                         val = str(element.value)
-                        list_val = []
-                        lenth_val = 0
-                        while lenth_val < (len(val)):
-                            if val[lenth_val] != ' ':
-                                list_val.append(int(val[lenth_val], 16))
-                                lenth_val += 1
-                            else:
-                                list_val.append(0xFF)
-                                lenth_val += 1
-                        self._memobj.skcode.killcode = list_val
+                        self._memobj.skcode.killcode = self._encode_dtmf(val)
                     elif element.value.get_mutable():
                         setattr(obj, setting, element.value)
                 except Exception:
@@ -2802,10 +3185,20 @@ class TDH3(TDH8):
     _tx_power = [chirp_common.PowerLevel("Low",  watts=2.00),
                  chirp_common.PowerLevel("High",  watts=5.00)]
     _roger_list = ["Off", "TONE1", "TONE2"]
-    _brightness_list = ["1", "2", "3", "4", "5"]
+    _brightness_map = [("1", 4), ("2", 3), ("3", 2), ("4", 1), ("5", 0)]
+    _mic_gain_list = ['%02d' % x for x in range(0, 10)]
+    _steps = [2.5, 5.0, 6.25, 10.0, 12.5, 25.0, 50.0, 8.33]
+    _step_list = ['%2.2fK' % x for x in _steps]
+    _scramble_list = ["Off"] + ['%02d' % x for x in range(1, 17)]
 
     def process_mmap(self):
         self._memobj = bitwise.parse(MEM_FORMAT_H3, self._mmap)
+
+    def get_features(self):
+        rf = super().get_features()
+        rf.valid_modes = ["FM", "NFM", "AM"]  # 25 kHz, 12.5 kHz, AM.
+        rf.valid_tuning_steps = self._steps
+        return rf
 
 
 @directory.register
@@ -2857,10 +3250,26 @@ class TDH3_Plus(TDH3):
     _ponmsg_list = ["Voltage", "Message", "Picture"]
     _save_list = ["Off", "Level 1(1:1)", "Level 2(1:2)",
                   "Level 3(1:3)", "Level 4(1:4)"]
-    SHORT_KEY_LIST = ["None", "FM Radio", "Lamp", "TONE",
-                      "Alarm", "Weather", "PTT2", "OD PTT"]
+    _lang_map = [("Chinese", 0), ("English", 1)]
+    _short_key_map = [("None", 0), ("FM Radio", 1), ("Lamp", 2),
+                      ("TONE", 4), ("Alarm", 5), ("Weather", 6),
+                      ("PTT2", 7), ("OD PTT", 8)]
+    _steps = [2.5, 5.0, 6.25, 10.0, 12.5, 25.0, 50.0, 0.5, 8.33]
+    _step_list = ['%.3gK' % x for x in _steps]
+    _fmrec_shortname = "FM Interrupt"
     LONG_KEY_LIST = ["None", "FM Radio", "Lamp", "Cancel Sq",
                      "TONE", "Alarm", "Weather"]
+
+    _code_list_dcsn = ["%03iN" % x for x in TDH8._dcs]
+    _code_list_dcsi = ["%03iI" % x for x in TDH8._dcs]
+    _code_list = TDH8._code_list_ctcss + _code_list_dcsn + _code_list_dcsi
+    _scramble_list = ["Off"] + ['%2d' % x for x in range(1, 17)]
+
+    def get_features(self):
+        rf = super().get_features()
+        rf.valid_modes = ["FM", "NFM", "AM"]  # 25 kHz, 12.5 kHz, AM.
+        rf.valid_tuning_steps = self._steps
+        return rf
 
 
 @directory.register
@@ -2889,6 +3298,7 @@ class RT730(TDH8):
     _tri_power = True
     _gmrs = False
     _ham = False
+    _lang_map = [("Chinese", 0), ("English", 1)]
 
     def process_mmap(self):
         self._memobj = bitwise.parse(MEM_FORMAT_RT730, self._mmap)
