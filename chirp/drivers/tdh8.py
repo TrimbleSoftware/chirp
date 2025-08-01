@@ -785,7 +785,7 @@ B_BAND = ["Wide", "Narrow"]
 B_WORKMODE = ["VFO", "VFO+CH", "CH Mode"]
 
 # FM
-FM_WORKMODE = ["CH", "VFO"]
+FM_WORKMODE = ["VFO", "CH"]
 FM_CHANNEL = ['%s' % x for x in range(0, 26)]
 
 # DTMF
@@ -1623,8 +1623,9 @@ class TDH8(chirp_common.CloneModeRadio):
 
         if self.MODEL in H8_LIST:
             rs = RadioSetting("stopkey1", "SHORT_KEY_TOP",
-                              RadioSettingValueList(SHORT_KEY_LIST,
-                                                    current_index=0))
+                              RadioSettingValueList(
+                                  SHORT_KEY_LIST,
+                                  current_index=_press.stopkey1))
             basic.append(rs)
 
             rs = RadioSetting("ltopkey2", "LONG_KEY_TOP",
@@ -1998,7 +1999,7 @@ class TDH8(chirp_common.CloneModeRadio):
                               current_index=_settings.fmroad))
         fmmode.append(rs)
 
-        rs = RadioSetting("fmrec", "Forbid Receive",
+        rs = RadioSetting("fmrec", "Allow Receive",
                           RadioSettingValueBoolean(_settings.fmrec))
         fmmode.append(rs)
 
