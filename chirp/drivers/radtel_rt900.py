@@ -1,4 +1,4 @@
-# Copyright 2025 Fred Trimble <fred@smtcpa.com>
+# Copyright 2025 Fred Trimble <chirpdriver@gmail.com>
 # CHIRP driver for Ratel RT-900 Series radios
 #
 # This program is free software: you can redistribute it and/or modify
@@ -264,6 +264,32 @@ VOXD_LIST = ["%s seconds" % str(x / 10) for x in range(5, 21)]
 WORKMODE_LIST = ["VFO Mode", "Channel Mode"]
 
 
+def get_default_features(self):
+    rf = chirp_common.RadioFeatures()
+    rf.has_settings = True
+    rf.has_bank = False
+    rf.has_ctone = True
+    rf.has_cross = True
+    rf.has_rx_dtcs = True
+    rf.has_tuning_step = False
+    rf.can_odd_split = True
+    rf.has_name = True
+    rf.valid_name_length = 12
+    rf.valid_characters = self._valid_chars
+    rf.valid_skips = ["", "S"]
+    rf.valid_tmodes = ["", "Tone", "TSQL", "DTCS", "Cross"]
+    rf.valid_cross_modes = ["Tone->Tone", "Tone->DTCS", "DTCS->Tone",
+                            "->Tone", "->DTCS", "DTCS->", "DTCS->DTCS"]
+    rf.valid_power_levels = self.POWER_LEVELS
+    rf.valid_duplexes = ["", "-", "+", "split", "off"]
+    rf.valid_modes = ["FM", "NFM"]  # 25 kHz, 12.5 kHz.
+    rf.valid_dtcs_codes = DTCS
+    rf.memory_bounds = (1, self._upper)
+    rf.valid_tuning_steps = [2.5, 5., 6.25, 8.33, 10., 12.5, 20., 25., 50.]
+    rf.valid_bands = self.VALID_BANDS
+    return rf
+
+
 def _enter_programming_mode(radio):
     serial = radio.pipe
     mml_jc8810._enter_programming_mode(radio)
@@ -287,7 +313,21 @@ def _exit_programming_mode(radio):
 
 
 def _read_block(radio, block_addr, block_size):
-    block_data = mml_jc8810._read_block(radio, block_addr, block_size)
+    serial = radio.pipe
+
+    cmd = struct.pack(">cHb", b'R', block_addr, block_size)
+    expectedresponse = b"R" + cmd[1:]
+
+    try:
+        serial.write(cmd)
+        response = serial.read(4 + block_size)
+        if response[:4] != expectedresponse:
+            raise Exception("Error reading block %04x." % (block_addr))
+
+        block_data = response[4:]
+    except Exception:
+        raise errors.RadioError("Failed to read block at %04x" % block_addr)
+
     if block_addr >= 0xf000:
         return block_data
     else:
@@ -295,16 +335,12 @@ def _read_block(radio, block_addr, block_size):
 
 
 def _write_block(radio, block_addr, block_size):
-    # Unfortunately we cannot use the original method as data is mmaped here
     serial = radio.pipe
 
     cmd = struct.pack(">cHb", b'W', block_addr, block_size)
     data = radio.get_mmap()[block_addr:block_addr + block_size]
     if block_addr < 0xf000:
         data = baofeng_uv17Pro._crypt(1, data)
-
-    LOG.debug("Writing Data:")
-    LOG.debug(util.hexprint(cmd + data))
 
     try:
         serial.write(cmd + data)
@@ -316,7 +352,7 @@ def _write_block(radio, block_addr, block_size):
 
 
 def do_download(radio):
-    LOG.debug("download")
+    LOG.debug("Downloading...")
     _enter_programming_mode(radio)
 
     data = b""
@@ -334,8 +370,7 @@ def do_download(radio):
         block = _read_block(radio, addr, radio.BLOCK_SIZE)
         data += block
 
-        LOG.debug("Address: %04x" % addr)
-        LOG.debug(util.hexprint(block))
+        radio.pipe.log('Sending request for %04x' % addr)
 
     _exit_programming_mode(radio)
 
@@ -343,6 +378,7 @@ def do_download(radio):
 
 
 def do_upload(radio):
+    LOG.debug("Uploading...")
     status = chirp_common.Status()
     status.msg = "Uploading to radio"
 
@@ -357,6 +393,7 @@ def do_upload(radio):
         for addr in range(start_addr, end_addr, radio.BLOCK_SIZE_UP):
             status.cur = addr + radio.BLOCK_SIZE_UP
             radio.status_fn(status)
+            radio.pipe.log('Sending address %04x' % addr)
             _write_block(radio, addr, radio.BLOCK_SIZE_UP)
 
     _exit_programming_mode(radio)
@@ -428,10 +465,9 @@ class RT900BT(chirp_common.CloneModeRadio):
 
     _magic = b"PROGRAMBT80U"
     _fingerprint = [b"\x01\x36\x01\x80\x04\x00\x05\x20",
-                    b"\x01\x00\x01\x80\x04\x00\x05\x20",
-                    ]  # fw 0.0.5 and newer for BT80
+                    ]  # fw V1.20P for RT-900 BT
     _fingerprint2 = [b"\x02\x00\x02\x60\x01\x03\x30\x04",
-                     ]  # fw 0.0.5 and newer for BT80
+                     ]  # fw V1.20P for RT-900 BT
     _cryptsetup = (b'SEND \x01\x01\x00\x00\x00\x00\x00\x00\x00\x00' +
                    b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00')
 
@@ -507,8 +543,6 @@ class RT900BT(chirp_common.CloneModeRadio):
         _radio_mode = self._memobj.opmode.radio_mode
         basic = RadioSettingGroup("basic", "Basic Settings")
         group = RadioSettings(basic)
-
-        spec = RadioSettingGroup("rt900", self.MODEL + " Specific")
 
         # Menu 12: TOT
         rs = RadioSettingValueList(TOT_LIST, current_index=_settings.tot)
@@ -688,6 +722,9 @@ class RT900BT(chirp_common.CloneModeRadio):
         rset = RadioSetting("pttid", "PTT ID", rs)
         dtmf.append(rset)
 
+        spec = RadioSettingGroup("spec", self.MODEL + " Specific")
+        group.append(spec)
+
         # secret radio mode setting (no menu). PTT + 8 for Super Mode
         rs = RadioSettingValueMap(self._RADIO_MODE_MAP, _radio_mode)
         rset = RadioSetting(
@@ -743,7 +780,6 @@ class RT900BT(chirp_common.CloneModeRadio):
                 rs = RadioSettingValueBoolean(_settings.am_mode)
                 rset = RadioSetting("am_mode", "AM Mode", rs)
                 spec.append(rset)
-        group.append(spec)
 
         # Menu 7: TDR - Dual freq standby
         rs = RadioSettingValueBoolean(_settings.tdr)
@@ -759,23 +795,8 @@ class RT900BT(chirp_common.CloneModeRadio):
         # VFO A/B settings
         abblock = RadioSettingGroup("abblock", "VFO A/B Channel")
         spec.append(abblock)
+
         vfo = self._memobj.vfo
-
-        # VFO A/B channel sub menu
-        abchannel = RadioSettingSubGroup("abchannel", "VFO A & B Channel")
-        abblock.append(abchannel)
-
-        # Work Mode A
-        rs = RadioSettingValueList(WORKMODE_LIST,
-                                   current_index=_settings.vfomra)
-        rset = RadioSetting("vfomra", "Work Mode A", rs)
-        abblock.append(rset)
-
-        # Work Mode B
-        rs = RadioSettingValueList(WORKMODE_LIST,
-                                   current_index=_settings.vfomrb)
-        rset = RadioSetting("vfomrb", "Work Mode B", rs)
-        abblock.append(rset)
 
         # Menu 21: VFO A/B BCL (Busy lock)
         rs = RadioSettingValueBoolean(_settings.busy_lock)
@@ -800,6 +821,12 @@ class RT900BT(chirp_common.CloneModeRadio):
         # VFO A channel sub menu
         achannel = RadioSettingSubGroup("achannel", "VFO A Channel")
         abblock.append(achannel)
+
+        # Work Mode A
+        rs = RadioSettingValueList(WORKMODE_LIST,
+                                   current_index=_settings.vfomra)
+        rset = RadioSetting("vfomra", "Work Mode", rs)
+        achannel.append(rset)
 
         # VFO A Freq
         def freq_validate(value):
@@ -843,14 +870,14 @@ class RT900BT(chirp_common.CloneModeRadio):
         rs.set_validate_callback(freq_validate)
         rset = RadioSetting("vfo.a.freq", "Frequency", rs)
         rset.set_apply_callback(apply_freq, vfo.a)
-        abblock.append(rset)
+        achannel.append(rset)
 
         # Menu 01: A Step
         rs = RadioSettingValueMap(
             self._step_map, vfo.a.step
         )
         rset = RadioSetting("vfo.a.step", "Tuning Step", rs)
-        abblock.append(rset)
+        achannel.append(rset)
 
         # Menu 02: TX Power
         rs = RadioSettingValueList(
@@ -858,14 +885,14 @@ class RT900BT(chirp_common.CloneModeRadio):
             current_index=vfo.a.txpower
         )
         rset = RadioSetting("vfo.a.txpower", "TX Power", rs)
-        abblock.append(rset)
+        achannel.append(rset)
 
         # Menu 05: Wide/Narrow Band
         rs = RadioSettingValueList(
             self._bandwidth_list, current_index=vfo.a.widenarr
         )
         rset = RadioSetting("vfo.a.widenarr", "Bandwidth", rs)
-        abblock.append(rset)
+        achannel.append(rset)
 
         def convert_bytes_to_offset(bytes):
             real_offset = 0
@@ -887,7 +914,7 @@ class RT900BT(chirp_common.CloneModeRadio):
             )
         )
         rset = RadioSetting("vfo.a.rxtone", "RX CTCSS/DCS", rs)
-        abblock.append(rset)
+        achannel.append(rset)
 
         # Menu 14,15: TX ctcss/dtsc
         rs = RadioSettingValueList(
@@ -897,7 +924,7 @@ class RT900BT(chirp_common.CloneModeRadio):
             )
         )
         rset = RadioSetting("vfo.a.txtone", "TX CTCSS/DCS", rs)
-        abblock.append(rset)
+        achannel.append(rset)
 
         # Menu 16: Voice Privacy (encryption)
         rs = RadioSettingValueList(
@@ -909,7 +936,7 @@ class RT900BT(chirp_common.CloneModeRadio):
             "Voice Privacy - Subtone Encryption",
             rs
         )
-        abblock.append(rset)
+        achannel.append(rset)
 
         # Menu 26: Offset
         rs = RadioSettingValueString(
@@ -917,25 +944,25 @@ class RT900BT(chirp_common.CloneModeRadio):
         )
         rset = RadioSetting("vfo.a.offset", "Offset (MHz)", rs)
         rset.set_apply_callback(apply_offset, vfo.a)
-        abblock.append(rset)
+        achannel.append(rset)
 
         # Menu 27: Offset direction
         rs = RadioSettingValueList(
             self._offset_list, current_index=vfo.a.sftd
         )
         rset = RadioSetting("vfo.a.sftd", "Offset Direction", rs)
-        abblock.append(rset)
+        achannel.append(rset)
 
         # Menu 29: S-Code DTMF 1-15
         rs = RadioSettingValueList(
             self._scode_list, current_index=vfo.a.scode)
         rset = RadioSetting("vfo.a.scode", "S-CODE", rs)
-        abblock.append(rset)
+        achannel.append(rset)
 
         # Menu 45: Scramble
         rs = RadioSettingValueMap(self._scramble_map, vfo.a.scramble)
         rset = RadioSetting("vfo.a.scramble", "Scramble", rs)
-        abblock.append(rset)
+        achannel.append(rset)
 
         # Menu 50: RX Modulation
         if self._has_am_per_channel:
@@ -944,11 +971,17 @@ class RT900BT(chirp_common.CloneModeRadio):
                 current_index=vfo.a.rxmod
             )
             rset = RadioSetting("vfo.a.rxmod", "RX Modulation", rs)
-            abblock.append(rset)
+            achannel.append(rset)
 
         # VFO B channel sub menu
         bchannel = RadioSettingSubGroup("bchannel", "VFO B Channel")
         abblock.append(bchannel)
+
+        # Work Mode B
+        rs = RadioSettingValueList(WORKMODE_LIST,
+                                   current_index=_settings.vfomrb)
+        rset = RadioSetting("vfomrb", "Work Mode", rs)
+        bchannel.append(rset)
 
         # VFO B Freq
         rs = RadioSettingValueString(
@@ -957,14 +990,14 @@ class RT900BT(chirp_common.CloneModeRadio):
         rs.set_validate_callback(freq_validate)
         rset = RadioSetting("vfo.b.freq", "Frequency", rs)
         rset.set_apply_callback(apply_freq, vfo.b)
-        abblock.append(rset)
+        bchannel.append(rset)
 
         # Menu 01: B Step
         rs = RadioSettingValueMap(
             self._step_map, vfo.b.step
         )
         rset = RadioSetting("vfo.b.step", "Tuning Step", rs)
-        abblock.append(rset)
+        bchannel.append(rset)
 
         # Menu 02: TX Power
         rs = RadioSettingValueList(
@@ -972,14 +1005,14 @@ class RT900BT(chirp_common.CloneModeRadio):
             current_index=vfo.b.txpower
         )
         rset = RadioSetting("vfo.b.txpower", "TX Power", rs)
-        abblock.append(rset)
+        bchannel.append(rset)
 
         # Menu 05: Wide/Narrow Band
         rs = RadioSettingValueList(
             self._bandwidth_list, current_index=vfo.b.widenarr
         )
         rset = RadioSetting("vfo.b.widenarr", "Bandwidth", rs)
-        abblock.append(rset)
+        bchannel.append(rset)
 
         # Menu 12,13: RX ctcss/dtsc
         rs = RadioSettingValueList(
@@ -989,7 +1022,7 @@ class RT900BT(chirp_common.CloneModeRadio):
             )
         )
         rset = RadioSetting("vfo.b.rxtone", "RX CTCSS/DCS", rs)
-        abblock.append(rset)
+        bchannel.append(rset)
 
         # Menu 14,15: TX ctcss/dtsc
         rs = RadioSettingValueList(
@@ -999,7 +1032,7 @@ class RT900BT(chirp_common.CloneModeRadio):
             )
         )
         rset = RadioSetting("vfo.b.txtone", "TX CTCSS/DCS", rs)
-        abblock.append(rset)
+        bchannel.append(rset)
 
         # Menu 16: Voice Privacy (encryption)
         rs = RadioSettingValueList(
@@ -1008,7 +1041,7 @@ class RT900BT(chirp_common.CloneModeRadio):
         )
         rset = RadioSetting("vfo.b.voicepri",
                             "Voice Privacy - Subtone Encryption", rs)
-        abblock.append(rset)
+        bchannel.append(rset)
 
         # Menu 26: Offset
         rs = RadioSettingValueString(
@@ -1016,25 +1049,25 @@ class RT900BT(chirp_common.CloneModeRadio):
         )
         rset = RadioSetting("vfo.b.offset", "Offset (MHz)", rs)
         rset.set_apply_callback(apply_offset, vfo.b)
-        abblock.append(rset)
+        bchannel.append(rset)
 
         # Menu 27: Offset direction
         rs = RadioSettingValueList(
             self._offset_list, current_index=vfo.b.sftd
         )
         rset = RadioSetting("vfo.b.sftd", "Offset Direction", rs)
-        abblock.append(rset)
+        bchannel.append(rset)
 
         # Menu 29: S-Code DTMF 1-15
         rs = RadioSettingValueList(
             self._scode_list, current_index=vfo.b.scode)
         rset = RadioSetting("vfo.b.scode", "S-CODE", rs)
-        abblock.append(rset)
+        bchannel.append(rset)
 
         # Menu 45: Scramble
         rs = RadioSettingValueMap(self._scramble_map, vfo.b.scramble)
         rset = RadioSetting("vfo.b.scramble", "Scramble", rs)
-        abblock.append(rset)
+        bchannel.append(rset)
 
         # Menu 50: RX Modulation
         if self._has_am_per_channel:
@@ -1042,7 +1075,7 @@ class RT900BT(chirp_common.CloneModeRadio):
                 self._rx_modulation_list, current_index=vfo.b.rxmod
             )
             rset = RadioSetting("vfo.b.rxmod", "RX Modulation", rs)
-            abblock.append(rset)
+            bchannel.append(rset)
 
         return group
 
@@ -1113,7 +1146,7 @@ class RT900BT(chirp_common.CloneModeRadio):
         return code
 
     def get_features(self):
-        rf = mml_jc8810.JC8810base.get_features(self)
+        rf = get_default_features(self)
         rf.valid_bands = self.VALID_BANDS
         rf.valid_modes = ["FM", "NFM", "AM", "NAM"]  # 25kHz, 12.5kHz, AM, NAM
         rf.valid_tuning_steps = self._steps
@@ -1181,7 +1214,7 @@ class RT900BT(chirp_common.CloneModeRadio):
                 index = _mem.txtone - 1
             mem.dtcs = DTCS[index]
         else:
-            LOG.warn("Bug: txtone is %04x" % _mem.txtone)
+            LOG.warning("Bug: txtone is %04x" % _mem.txtone)
 
         if _mem.rxtone in [0, 0xFFFF]:
             rxmode = ""
@@ -1197,7 +1230,7 @@ class RT900BT(chirp_common.CloneModeRadio):
                 index = _mem.rxtone - 1
             mem.rx_dtcs = DTCS[index]
         else:
-            LOG.warn("Bug: rxtone is %04x" % _mem.rxtone)
+            LOG.warning("Bug: rxtone is %04x" % _mem.rxtone)
 
         if txmode == "Tone" and not rxmode:
             mem.tmode = "Tone"
