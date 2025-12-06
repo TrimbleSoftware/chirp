@@ -1,5 +1,5 @@
 # Copyright 2025 Fred Trimble <chirpdriver@gmail.com>
-# CHIRP driver for TIDRADIO TD-M-11 radios
+# CHIRP driver for TIDRADIO TD-M11-221 radios
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -19,20 +19,15 @@ from chirp import (
     chirp_common,
     directory,
     errors,
-    memmap,
-    util,
+    memmap
 )
 
 from chirp.settings import (
     RadioSetting,
     RadioSettingGroup,
     RadioSettings,
-    RadioSettingValueBoolean,
-    RadioSettingValueInvertedBoolean,
-    RadioSettingValueInteger,
     RadioSettingValueList,
     RadioSettingValueString,
-    RadioSettingValueMap,
     MemSetting,
     InvalidValueError
 )
@@ -64,22 +59,37 @@ struct {
 } memory[%d];
 
 // settings:
-#seekto 0x0310; // ???
+#seekto 0x0300;
 struct {
-  u8 voice:1,
-     tot:1,
-     vox:1,
-     unknown0:5;
-  u8 squelch;
-  u8 sleepmode;
-  u8 password;
+  u8 unknown0:4,
+     squelch:4; //
+  u8 unused1:6, //
+     voice:2; // voice prompts, 0 Off, 1 Chinese, 2 English
+  u8 unknown1;
+  u8 unused2:4,//
+     vox:4; //
+  u8 unused3:2, //
+     tot:6; //
+  u8 unknown2;
+  u8 unused4:4, //
+     sleep:4; //
+  u8 firmware[4];
+  u8 unused5:4, //
+     sidekey1:4; //
+  u8 unknown4;
+  u8 unused6:4, //
+     sidekey2:4; //
+  u8 unknown5[18];
+  u8 password[6]; //
+  u8 unknown6[26];
 } settings;
 """
 
 CMD_ACK = b'A'
-
+TIMEOUT= 3 # serial timeout in seconds
 TXPOWER_HIGH = 0x01
 TXPOWER_LOW = 0x00
+
 
 def get_default_features(self):
     rf = chirp_common.RadioFeatures()
@@ -109,6 +119,7 @@ def get_default_features(self):
 
 def _enter_programming_mode(radio):
     serial = radio.pipe
+    serial.timeout = TIMEOUT
 
     exito = False
     for i in range(0, 5):
@@ -129,19 +140,19 @@ def _enter_programming_mode(radio):
         msg += "Check you interface cable and power cycle your radio."
         raise errors.RadioError(msg)
 
+    exito = False
     try:
         serial.write(b"\xff\xff\xff\xff\xff\xff")  # radio password?
         ack = serial.read(1)
 
-        try:
-            if ack == CMD_ACK:
-                exito = True
-        except Exception:
-            LOG.debug("Error getting password from radio")
-
-        if exito is False:
+        if ack == CMD_ACK:
+            exito = True
+        else:
             msg = "The radio password does not match"
-            raise errors.RadioError(msg)
+            raise ValueError(msg)
+
+    except ValueError as ex:
+        raise errors.RadioError(ex)
 
     except Exception:
         raise errors.RadioError("Error communicating with radio")
@@ -149,10 +160,13 @@ def _enter_programming_mode(radio):
 
 def _exit_programming_mode(radio):
     serial = radio.pipe
+    serial.timeout = TIMEOUT
+
     try:
         serial.write(b"E")
     except Exception:
         raise errors.RadioError("Radio refused to exit programming mode")
+
 
 def _get_checksum(data, addr, len):
     checksum = 0
@@ -160,9 +174,12 @@ def _get_checksum(data, addr, len):
         checksum += data[index + addr]
     return checksum & 0xff  # checksum is only low order byte
 
+
 def _read_block(radio, block_addr, size):
     serial = radio.pipe
-    cmd = b'R' + struct.pack('<H', block_addr) + b'\x10'
+    serial.timeout = TIMEOUT
+
+    cmd = struct.pack('<cHb', b'R', block_addr, size)
     expectedresponse = b''
 
     try:
@@ -180,17 +197,18 @@ def _read_block(radio, block_addr, size):
     return block_data
 
 
-def _write_block(radio, block_addr, block_size):
+def _write_block(radio, block_addr, size):
     serial = radio.pipe
+    serial.timeout = TIMEOUT
 
-    cmd = struct.pack(">cHb", b'W', block_addr, block_size)
-    data = radio.get_mmap()[block_addr:block_addr + block_size]
-    if block_addr < 0xf000:
-        data = data
+    cmd = struct.pack('<cH', b'W', block_addr)
+    data = radio.get_mmap()[block_addr:block_addr + size]
+    checksum = _get_checksum(data, 0, size)
 
     try:
-        serial.write(cmd + data)
-        if serial.read(1) != CMD_ACK:
+        serial.write(cmd + data + int.to_bytes(checksum, 1, 'big'))
+        ack = serial.read(1)
+        if ack != CMD_ACK:
             raise Exception("No ACK")
     except Exception:
         raise errors.RadioError("Failed to send block "
@@ -223,7 +241,6 @@ def do_upload(radio):
     LOG.debug("Uploading...")
     status = chirp_common.Status()
     status.msg = "Uploading to radio"
-
     _enter_programming_mode(radio)
 
     status.cur = 0
@@ -251,7 +268,8 @@ class TDM11(chirp_common.CloneModeRadio):
     BAUD_RATE = 9600
     BLOCK_SIZE = 0x10
     BLOCK_SIZE_UP = 0x10
-    VALID_BANDS = [(136000000,174000000), (200000000,260000000), (350000000,390000000),(400000000,520000000)]
+    VALID_BANDS = [(136000000,174000001), (200000000,260000001),
+                   (350000000,390000001),(400000000,520000001)]
     _power_levels = [
         chirp_common.PowerLevel("Low", watts=0.50),
         chirp_common.PowerLevel("High", watts=2.00)
@@ -259,15 +277,26 @@ class TDM11(chirp_common.CloneModeRadio):
 
     _upper = 22
     _mem_params = (_upper)
-    _memsize = 0x0330  # Including calibration data?
-
+    _memsize = 0x0340  # Including calibration data?
+    _ranges = [
+        (0x0000, 0x02FF),  # 22 16 byte channels
+        (0x0300, 0X033F)  # settings and password
+    ]
     _magic = b"STD-M11-"
     _valid_chars = chirp_common.CHARSET_ALPHANUMERIC
     _steps = [5.0, 12.5, 25.0]
+    # mem extra lists
     _bcl_list = ['Off', 'Carrier', 'QT/DTQ']
     _jumpfreq_list = ['Normal', 'Special']
     _compand_list = ['Off', 'On']
     _scramble_list = ['Off'] + ['Scramble %d' % x for x in range(1, 9)]
+    # settings lists
+    _voice_list = ['Off', 'Chinese', 'English']
+    _tot_list = ['Off'] + ['%ds' % x for x in range(15, 315, 15)]
+    _voxlevel_list = ['Off'] + ['%d' % x for x in range(1,10)]
+    _squelchlevel_list = ['%d' % x for x in range(0,10)]
+    _sleepmode_list = ['Off'] + ['1:%d' % x for x in range(1,11)]
+    _sidekey_list = ['None','Monitor','Scan','Alarm','Bluetooth','Weather']
 
     def sync_in(self):
         """Download from radio"""
@@ -287,6 +316,7 @@ class TDM11(chirp_common.CloneModeRadio):
 
         self._mmap = data
         self.process_mmap()
+
 
     def sync_out(self):
         """Upload to radio"""
@@ -327,8 +357,77 @@ class TDM11(chirp_common.CloneModeRadio):
         else:
             raise Exception("Internal error: invalid mode `%s'" % mode)
 
+
     def get_settings(self):
         _settings = self._memobj.settings
+        basic = RadioSettingGroup("basic", 'Settings')
+        group = RadioSettings(basic)
+
+        # format raw firmware for display
+        def _fw(version):
+            ver = 'v'
+            for i in version:
+                ver += '%d' % i + '.'
+            return ver[:-3]
+
+        # Firmware version
+        rs = RadioSettingValueString(6, 6, _fw(_settings.firmware))
+        rs.set_mutable(False)
+        rset = RadioSetting('setting.firmware', 'Firmware Version', rs)
+        rset.set_doc('Radio Firmware Version')
+        basic.append(rset)
+
+        # Voice prompts
+        rs = RadioSettingValueList(self._voice_list,
+                                   current_index=_settings.voice)
+        rset = MemSetting('settings.voice', 'Voice Prompts', rs)
+        rset.set_doc('Radio Voice Prompts language')
+        basic.append(rset)
+
+        # TOT
+        rs = RadioSettingValueList(self._tot_list,
+                                   current_index=_settings.tot)
+        rset = MemSetting('settings.tot', 'Time Out Timer', rs)
+        rset.set_doc('Radio TX Time Out Timer value')
+        basic.append(rset)
+
+        # VOX level
+        rs = RadioSettingValueList(self._voxlevel_list,
+                                   current_index=_settings.vox)
+        rset = MemSetting('settings.vox', 'VOX Level', rs)
+        rset.set_doc('Radio VOX Level senesitivity value')
+        basic.append(rset)
+
+        # Squelch level
+        rs = RadioSettingValueList(self._squelchlevel_list,
+                                   current_index=_settings.squelch)
+        rset = MemSetting('settings.squelch', 'Squelch Level', rs)
+        rset.set_doc('Radio Squelch Level value')
+        basic.append(rset)
+
+        # Sleep mode
+        rs = RadioSettingValueList(self._sleepmode_list,
+                                   current_index=_settings.sleep)
+        rset = MemSetting('settings.sleep', 'Sleep Mode', rs)
+        rset.set_doc('Radio Sleep Mode power saving ratio value')
+        basic.append(rset)
+
+        # Sidekey 1
+        rs = RadioSettingValueList(self._sidekey_list,
+                                   current_index=_settings.sidekey1)
+        rset = MemSetting('settings.sidekey1', 'Sidekey 1 Long Pess', rs)
+        rset.set_doc('Radio Sidekey 1 Long Press assigned action value')
+        basic.append(rset)
+
+        # Sidekey 2
+        rs = RadioSettingValueList(self._sidekey_list,
+                                   current_index=_settings.sidekey2)
+        rset = MemSetting('settings.sidekey2', 'Sidekey 2 Long Press', rs)
+        rset.set_doc('Radio Sidekey 2 Long Press assigned action value')
+        basic.append(rset)
+
+        return group
+
 
     @classmethod
     def get_prompts(cls):
@@ -357,6 +456,7 @@ class TDM11(chirp_common.CloneModeRadio):
             6. Click OK to upload image to device."""))
         return rp
 
+
     def get_features(self):
         rf = get_default_features(self)
         rf.valid_bands = self.VALID_BANDS
@@ -364,6 +464,7 @@ class TDM11(chirp_common.CloneModeRadio):
         rf.valid_tuning_steps = self._steps
         rf.has_name = False
         return rf
+
 
     def get_memory(self, number):
         """Get the mem representation from the radio image"""
@@ -451,6 +552,7 @@ class TDM11(chirp_common.CloneModeRadio):
 
         return mem
 
+
     def set_memory(self, mem):
         _mem = self._memobj.memory[mem.number - 1]
 
@@ -494,6 +596,21 @@ class TDM11(chirp_common.CloneModeRadio):
 
         for setting in mem.extra:
             setattr(_mem, setting.get_name(), setting.value)
+
+
+    def validate_memory(self, mem):
+        msgs = []
+        in_range = chirp_common.in_range
+
+        if not in_range(mem.freq, self.VALID_BANDS):
+            s = ''
+            for x in self.VALID_BANDS:
+                s += str(x[0] / 1000000) + ' - ' + str(x[1] / 1000000) + ', '
+            s = '\n' + s[:-2]
+            msgs.append(chirp_common.ValidationError(s))
+
+        return super().validate_memory(mem) + msgs
+
 
     def set_settings(self, settings):
         # apply all Memsettings
