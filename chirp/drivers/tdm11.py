@@ -28,8 +28,8 @@ from chirp.settings import (
     RadioSettings,
     RadioSettingValueList,
     RadioSettingValueString,
-    MemSetting,
-    InvalidValueError
+    MemSetting
+    # InvalidValueError
 )
 
 import logging
@@ -88,7 +88,7 @@ struct {
 """
 
 CMD_ACK = b'A'
-TIMEOUT= 3 # serial timeout in seconds
+TIMEOUT = 1  # serial timeout in seconds
 TXPOWER_HIGH = 0x01
 TXPOWER_LOW = 0x00
 
@@ -144,13 +144,17 @@ def _enter_programming_mode(radio):
 
     exito = False
     try:
-        serial.write(b"\xff\xff\xff\xff\xff\xff")  # radio password?
+        # if we get an ACK here the radio programming function
+        # is not password protected
+        serial.write(b"\xff\xff\xff\xff\xff\xff")
         ack = serial.read(1)
 
         if ack == CMD_ACK:
             exito = True
         else:
-            msg = "The radio password does not match"
+            msg = 'The radio Programming function is '\
+                'password protected. Use the factory CPS to '\
+                'remove the password to continue.'
             raise ValueError(msg)
 
     except ValueError as ex:
@@ -262,18 +266,18 @@ def do_upload(radio):
 class TDM11_22(chirp_common.CloneModeRadio):
     # ==========
     # Notice to developers:
-    # The TD-M11-22 for USA GMRS/FRS support in this driver is currently based
+    # The TD-M11 22 for USA FRS/GMRS support in this driver is currently based
     # on Firmware v0.9.4
     # ==========
     """TIDRADIO TD-M11 22"""
     VENDOR = "TIDRADIO"
     MODEL = "TD-M11"
-    VARIANT = '22 GMRS'  # USA GMRS/FRS
+    VARIANT = '22 FRS'  # USA FRS/GMRS
     BAUD_RATE = 9600
     BLOCK_SIZE = 0x10
     BLOCK_SIZE_UP = 0x10
-    VALID_BANDS = [(136000000,174000001), (200000000,260000001),
-                   (350000000,390000001),(400000000,520000001)]
+    VALID_BANDS = [(136000000, 174000001), (200000000, 260000001),
+                   (350000000, 390000001), (400000000, 520000001)]
     _power_levels = [
         chirp_common.PowerLevel("Low", watts=0.50),
         chirp_common.PowerLevel("High", watts=2.00)
@@ -281,7 +285,7 @@ class TDM11_22(chirp_common.CloneModeRadio):
 
     _upper = 22
     _mem_params = (_upper)
-    _memsize = 0x0340  # Including calibration data?
+    _memsize = 0x0340  # Including calibration data
     _ranges = [
         (0x0000, 0x0160),  # 22ea  16 byte channels
         (0x0300, 0X033F)  # settings and password
@@ -297,15 +301,17 @@ class TDM11_22(chirp_common.CloneModeRadio):
     # settings lists
     _voice_list = ['Off', 'Chinese', 'English']
     _tot_list = ['Off'] + ['%ds' % x for x in range(15, 315, 15)]
-    _voxlevel_list = ['Off'] + ['%d' % x for x in range(1,10)]
-    _squelchlevel_list = ['%d' % x for x in range(0,10)]
-    _sleepmode_list = ['Off'] + ['1:%d' % x for x in range(1,11)]
-    _sidekey_list = ['None','Monitor','Scan','Alarm','Bluetooth','Weather']
+    _voxlevel_list = ['Off'] + ['%d' % x for x in range(1, 10)]
+    _squelchlevel_list = ['%d' % x for x in range(0, 10)]
+    _sleepmode_list = ['Off'] + ['1:%d' % x for x in range(1, 11)]
+    _sidekey_list = ['None', 'Monitor', 'Scan',
+                     'Alarm', 'Bluetooth', 'Weather']
     _channel_list = ['%d' % x for x in range(1, _upper + 1)]
 
     _freqband_list = []
     for x in VALID_BANDS:
-        _freqband_list.append(str(int(x[0] / 1000000)) + '-' + str(int(x[1] / 1000000)))
+        _freqband_list.append(str(int(x[0] / 1000000)) + '-' +
+                              str(int(x[1] / 1000000)))
 
     def sync_in(self):
         """Download from radio"""
@@ -326,7 +332,6 @@ class TDM11_22(chirp_common.CloneModeRadio):
         self._mmap = data
         self.process_mmap()
 
-
     def sync_out(self):
         """Upload to radio"""
         try:
@@ -340,7 +345,6 @@ class TDM11_22(chirp_common.CloneModeRadio):
         finally:
             _exit_programming_mode(self)
 
-
     def _decode_tone(self, val):
         if val == 16665 or val == 0:
             return '', None, None
@@ -350,7 +354,6 @@ class TDM11_22(chirp_common.CloneModeRadio):
             return 'DTCS', val - 8000, 'N'
         else:
             return 'Tone', val / 10.0, None
-
 
     def _encode_tone(self, memval, mode, value, pol):
         if mode == "":
@@ -365,7 +368,6 @@ class TDM11_22(chirp_common.CloneModeRadio):
             memval[1].set_bits(flag)
         else:
             raise Exception("Internal error: invalid mode `%s'" % mode)
-
 
     def get_settings(self):
         _settings = self._memobj.settings
@@ -438,12 +440,11 @@ class TDM11_22(chirp_common.CloneModeRadio):
         # Selected default channel (setting not in factory CPS)
         rs = RadioSettingValueList(self._channel_list,
                                    current_index=_settings.channel)
-        rset = MemSetting('settings.channel', 'Selected Default Channel', rs)
-        rset.set_doc('Radio Channel that is selected by Default')
+        rset = MemSetting('settings.channel', 'Default Channel', rs)
+        rset.set_doc('Radio Channel that is selected by Default at power-on')
         basic.append(rset)
 
         return group
-
 
     @classmethod
     def get_prompts(cls):
@@ -472,7 +473,6 @@ class TDM11_22(chirp_common.CloneModeRadio):
             6. Click OK to upload image to device."""))
         return rp
 
-
     def get_features(self):
         rf = get_default_features(self)
         rf.valid_bands = self.VALID_BANDS
@@ -480,7 +480,6 @@ class TDM11_22(chirp_common.CloneModeRadio):
         rf.valid_tuning_steps = self._steps
         rf.has_name = False
         return rf
-
 
     def get_memory(self, number):
         """Get the mem representation from the radio image"""
@@ -534,7 +533,7 @@ class TDM11_22(chirp_common.CloneModeRadio):
             mem.power = self._power_levels[_mem.txpower]
         except Exception:
             LOG.error('Channel %d: get_memory: unhandled power level: 0x%02x' %
-                       (mem.number, _mem.txpower))
+                      (mem.number, _mem.txpower))
 
         mem.mode = _mem.narrow and "NFM" or "FM"
 
@@ -567,7 +566,6 @@ class TDM11_22(chirp_common.CloneModeRadio):
         mem.extra.append(rset)
 
         return mem
-
 
     def set_memory(self, mem):
         _mem = self._memobj.memory[mem.number - 1]
@@ -602,17 +600,16 @@ class TDM11_22(chirp_common.CloneModeRadio):
             _mem.txpower = self._power_levels.index(mem.power)
         except Exception:
             LOG.error('Channel %d: set_memory: unhandled power level: %s' %
-                (mem.number, mem.power))
+                      (mem.number, mem.power))
 
         try:
             _mem.narrow = self.get_features().valid_modes.index(mem.mode)
         except Exception:
             LOG.error('Channel %d: set_memory: unhandled mode: %s' %
-                (mem.number, mem.mode))
+                      (mem.number, mem.mode))
 
         for setting in mem.extra:
             setattr(_mem, setting.get_name(), setting.value)
-
 
     def validate_memory(self, mem):
         msgs = []
@@ -621,12 +618,12 @@ class TDM11_22(chirp_common.CloneModeRadio):
         if not in_range(mem.freq, self.VALID_BANDS):
             s = ''
             for x in self.VALID_BANDS:
-                s += str(int(x[0] / 1000000)) + '-' + str(int(x[1] / 1000000)) + ', '
+                s += str(int(x[0] / 1000000)) + '-' + \
+                    str(int(x[1] / 1000000)) + ', '
             s = '\n' + s[:-2]
             msgs.append(chirp_common.ValidationError(s))
 
         return super().validate_memory(mem) + msgs
-
 
     def set_settings(self, settings):
         # apply all Memsettings
@@ -641,37 +638,37 @@ class TDM11_22(chirp_common.CloneModeRadio):
         self._memobj = bitwise.parse(mem_format, self._mmap)
 
 
-@directory.register
-class TDM11_16(TDM11_22):
-    # ==========
-    # Notice to developers:
-    # The TD-M11-16 for EU PMR support in this driver is currently based
-    # on Firmware v0.9.4
-    # ==========
-    """TIDRADIO TD-M11 16"""
-    VENDOR = "TIDRADIO"
-    MODEL = "TD-M11"
-    VARIANT = '16 PMR'  # EU PMR
+# @directory.register
+# class TDM11_16(TDM11_22):
+#     # ==========
+#     # Notice to developers:
+#     # The TD-M11 16 for EU PMR446  support in this driver is currently based
+#     # on Firmware v0.9.4
+#     # ==========
+#     """TIDRADIO TD-M11 16"""
+#     VENDOR = "TIDRADIO"
+#     MODEL = "TD-M11"
+#     VARIANT = '16 PMR'  # EU PMR
 
-    _upper = 16
-    _mem_params = (_upper)
+#     _upper = 16
+#     _mem_params = (_upper)
 
-    _ranges = [
-        (0x0000, 0x0100),  # 16ea 16 byte channels
-        (0x0300, 0X033F)  # settings and password
-    ]
+#     _ranges = [
+#         (0x0000, 0x0100),  # 16ea 16 byte channels
+#         (0x0300, 0X033F)  # settings and password
+#     ]
 
-    _channel_list = ['%d' % x for x in range(1, _upper + 1)]
+#     _channel_list = ['%d' % x for x in range(1, _upper + 1)]
 
-    @classmethod
-    def get_prompts(cls):
-        rp = chirp_common.RadioPrompts()
-        rp.experimental = \
-            ('This driver is a BETA version ONLY for the TIDRADIO '
-             'TD-M11 16 running Firmware v0.x.y\n'
-             '\n'
-             'Please save an unedited copy of your first successful\n'
-             'download to a CHIRP Radio Images(*.img) file.\n\n'
-             'PROCEED AT YOUR OWN RISK!'
-             )
-        return rp
+#     @classmethod
+#     def get_prompts(cls):
+#         rp = chirp_common.RadioPrompts()
+#         rp.experimental = \
+#             ('This driver is a BETA version ONLY for the TIDRADIO '
+#              'TD-M11 16 running Firmware v0.x.y\n'
+#              '\n'
+#              'Please save an unedited copy of your first successful\n'
+#              'download to a CHIRP Radio Images(*.img) file.\n\n'
+#              'PROCEED AT YOUR OWN RISK!'
+#              )
+#         return rp
