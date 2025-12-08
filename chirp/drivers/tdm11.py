@@ -1,5 +1,5 @@
 # Copyright 2025 Fred Trimble <chirpdriver@gmail.com>
-# CHIRP driver for TIDRADIO TD-M11-221 radios
+# CHIRP driver for TIDRADIO TD-M11 22 and TD-M11 16 PMR446 radios
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
