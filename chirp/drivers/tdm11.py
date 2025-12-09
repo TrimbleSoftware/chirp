@@ -41,19 +41,19 @@ LOG = logging.getLogger(__name__)
 MEM_FORMAT = """
 // memmory channels: 16 bytes each * 22 channels = 352 bytes
 struct {
-  lbcd rxfreq[4]; //
-  lbcd txfreq[4]; //
-  lbcd rxtone[2]; //
-  lbcd txtone[2]; //
+  lbcd rxfreq[4];   // RX freq
+  lbcd txfreq[4];   // TX freq
+  lbcd rxtone[2];   // RX tone
+  lbcd txtone[2];   // TX tone
   u8 unknown0:2,
-     jumpfreq:1, //
-     scan:1, //
-     txpower:1, //
-     narrow:1, //
-     bcl:2; //
+     jumpfreq:1,    // freq hopping
+     scan:1,        // scan add
+     txpower:1,     // TX  power
+     narrow:1,      // bandwidth
+     bcl:2;         // busy lockout
   u8 unknown1:3,
-     compand:1, //
-     scramble:4; //
+     compand:1,     // compander
+     scramble:4;    // scramble
   u8 unknown2;
   u8 unknown3;
 } memory[%d];
@@ -61,34 +61,37 @@ struct {
 // settings:
 #seekto 0x0300;
 struct {
-  u8 unknown0:4,
-     squelch:4; //
-  u8 unused1:6, //
-     voice:2; // voice prompts, 0 Off, 1 Chinese, 2 English
-  u8 channel; // selected channel on power up
-  u8 unused2:4,//
-     vox:4; //
-  u8 unused3:2, //
-     tot:6; //
-  u8 unknown2;
-  u8 unused4:4, //
-     sleep:4; //
-  u8 firmware[4];
-  u8 unused5:4, //
-     sidekey1:4; //
-  u8 unknown4;
-  u8 unused6:4, //
-     sidekey2:4; //
-  u8 unknown5[2];
-  u8 freqrange[4];
-  u8 unknown6[12];
-  u8 password[6]; //
-  u8 unknown7[26];
+  u8 unknown0:4,    // 0x0300
+     squelch:4;     //        squelch level
+  u8 unused1:6,     // 0x0301
+     voice:2;       //        voice prompts, 0 Off, 1 Chinese, 2 English
+  u8 channel;       // 0x0302 default channel on power up
+  u8 unused2:4,     // 0x0303
+     vox:4;         //
+  u8 unused3:2,     // 0x0304
+     tot:6;         //        TX time out timer
+  u8 wxchannel;     // 0x0305
+  u8 unused4:4,     // 0x0306
+     sleep:4;       //
+  u8 firmware[3];   // 0x0307 3 byte firmware version
+  u8 unknown1;      // 0x0308
+  u8 unused5:4,     // 0x030b
+     sidekey1:4;    //
+  u8 unknown4;      // 0x030c
+  u8 unused6:4,     // 0x030d
+     sidekey2:4;    //
+  u8 unknown5[2];   // 0x030e
+  u8 freqrange[4];  // 0x0310
+  u8 model;         // 0x0314
+  u8 areacode;      // 0x0315
+  u8 unknown7[10];  // 0x0316
+  u8 password[6];   // 0x0320 6 byte radio programming mode password
+  // u8 unknown8[26];  // 0x0326
 } settings;
 """
 
 CMD_ACK = b'A'
-TIMEOUT = 1  # serial timeout in seconds
+TIMEOUT = 0.5  # serial timeout in seconds
 TXPOWER_HIGH = 0x01
 TXPOWER_LOW = 0x00
 
@@ -105,13 +108,13 @@ def get_default_features(self):
     rf.has_name = False
     rf.valid_name_length = 0
     rf.valid_characters = self._valid_chars
-    rf.valid_skips = ["", "S"]
-    rf.valid_tmodes = ["", "Tone", "TSQL", "DTCS", "Cross"]
-    rf.valid_cross_modes = ["Tone->Tone", "Tone->DTCS", "DTCS->Tone",
-                            "->Tone", "->DTCS", "DTCS->", "DTCS->DTCS"]
+    rf.valid_skips = ['', 'S']
+    rf.valid_tmodes = ['', 'Tone', 'TSQL', 'DTCS', 'Cross']
+    rf.valid_cross_modes = ['Tone->Tone', 'Tone->DTCS', 'DTCS->Tone',
+                            '->Tone', '->DTCS', 'DTCS->', 'DTCS->DTCS']
     rf.valid_power_levels = self._power_levels
-    rf.valid_duplexes = ["", "-", "+", "split", "off"]
-    rf.valid_modes = ["FM", "NFM"]  # 25 kHz, 12.5 kHz.
+    rf.valid_duplexes = ['', '-', '+', 'split', 'off']
+    rf.valid_modes = ['FM', 'NFM']  # 25 kHz, 12.5 kHz.
     rf.valid_dtcs_codes = chirp_common.DTCS_CODES
     rf.memory_bounds = (1, self._upper)
     rf.valid_tuning_steps = [2.5, 5., 6.25, 8.33, 10., 12.5, 20., 25., 50.]
@@ -133,20 +136,20 @@ def _enter_programming_mode(radio):
                 exito = True
                 break
         except Exception:
-            LOG.debug("Attempt #%s, failed, trying again" % i)
+            LOG.debug('Attempt #%s, failed, trying again' % i)
             pass
 
     # check if we had EXITO
     if exito is False:
-        msg = "The radio did not accept program mode after five tries.\n"
-        msg += "Check you interface cable and power cycle your radio."
+        msg = 'The radio did not accept program mode after five tries.\n'
+        msg += 'Check your interface cable and power cycle your radio.'
         raise errors.RadioError(msg)
 
     exito = False
     try:
         # if we get an ACK here the radio programming function
         # is not password protected
-        serial.write(b"\xff\xff\xff\xff\xff\xff")
+        serial.write(b'\xff\xff\xff\xff\xff\xff')
         ack = serial.read(1)
 
         if ack == CMD_ACK:
@@ -161,7 +164,7 @@ def _enter_programming_mode(radio):
         raise errors.RadioError(ex)
 
     except Exception:
-        raise errors.RadioError("Error communicating with radio")
+        raise errors.RadioError('Error communicating with radio')
 
 
 def _exit_programming_mode(radio):
@@ -169,9 +172,9 @@ def _exit_programming_mode(radio):
     serial.timeout = TIMEOUT
 
     try:
-        serial.write(b"E")
+        serial.write(b'E')
     except Exception:
-        raise errors.RadioError("Radio refused to exit programming mode")
+        raise errors.RadioError('Radio refused to exit programming mode')
 
 
 def _get_checksum(data, addr, len):
@@ -194,11 +197,11 @@ def _read_block(radio, block_addr, size):
         expectedresponse = serial.read(1)  # read 1 byte checksum
         checksum = _get_checksum(response, 0, size)
         if checksum != int.from_bytes(expectedresponse, 'big'):
-            raise errors.RadioError("Error reading block %04x." % (block_addr))
+            raise errors.RadioError('Error reading block %04x.' % (block_addr))
         block_data = response
 
     except Exception:
-        raise errors.RadioError("Failed to read block at %04x" % block_addr)
+        raise errors.RadioError('Failed to read block at %04x' % block_addr)
 
     return block_data
 
@@ -215,20 +218,20 @@ def _write_block(radio, block_addr, size):
         serial.write(cmd + data + int.to_bytes(checksum, 1, 'big'))
         ack = serial.read(1)
         if ack != CMD_ACK:
-            raise Exception("No ACK")
+            raise Exception('No ACK')
     except Exception:
-        raise errors.RadioError("Failed to send block "
-                                "to radio at %04x" % block_addr)
+        raise errors.RadioError('Failed to send block '
+                                'to radio at %04x' % block_addr)
 
 
 def do_download(radio):
-    LOG.debug("Downloading...")
+    LOG.debug('Downloading...')
     _enter_programming_mode(radio)
 
     data = b''
 
     status = chirp_common.Status()
-    status.msg = "Cloning from radio"
+    status.msg = 'Cloning from radio'
 
     status.cur = 0
     status.max = radio._memsize
@@ -244,9 +247,9 @@ def do_download(radio):
 
 
 def do_upload(radio):
-    LOG.debug("Uploading...")
+    LOG.debug('Uploading...')
     status = chirp_common.Status()
-    status.msg = "Uploading to radio"
+    status.msg = 'Uploading to radio'
     _enter_programming_mode(radio)
 
     status.cur = 0
@@ -270,8 +273,8 @@ class TDM11_22(chirp_common.CloneModeRadio):
     # on Firmware v0.9.4
     # ==========
     """TIDRADIO TD-M11 22"""
-    VENDOR = "TIDRADIO"
-    MODEL = "TD-M11"
+    VENDOR = 'TIDRADIO'
+    MODEL = 'TD-M11'
     VARIANT = '22 FRS'  # USA FRS/GMRS
     BAUD_RATE = 9600
     BLOCK_SIZE = 0x10
@@ -279,8 +282,8 @@ class TDM11_22(chirp_common.CloneModeRadio):
     VALID_BANDS = [(136000000, 174000001), (200000000, 260000001),
                    (350000000, 390000001), (400000000, 520000001)]
     _power_levels = [
-        chirp_common.PowerLevel("Low", watts=0.50),
-        chirp_common.PowerLevel("High", watts=2.00)
+        chirp_common.PowerLevel('Low', watts=0.50),
+        chirp_common.PowerLevel('High', watts=2.00)
     ]
 
     _upper = 22
@@ -288,9 +291,9 @@ class TDM11_22(chirp_common.CloneModeRadio):
     _memsize = 0x0340  # Including calibration data
     _ranges = [
         (0x0000, 0x0160),  # 22ea  16 byte channels
-        (0x0300, 0X033F)  # settings and password
+        (0x0300, 0X0325)  # settings and password
     ]
-    _magic = b"STD-M11-"
+    _magic = b'STD-M11-'
     _valid_chars = chirp_common.CHARSET_ALPHANUMERIC
     _steps = [5.0, 12.5, 25.0]
     # mem extra lists
@@ -307,7 +310,7 @@ class TDM11_22(chirp_common.CloneModeRadio):
     _sidekey_list = ['None', 'Monitor', 'Scan',
                      'Alarm', 'Bluetooth', 'Weather']
     _channel_list = ['%d' % x for x in range(1, _upper + 1)]
-
+    _wxchannel_list = ['WX %d' % x for x in range(1, 12)]
     _freqband_list = []
     for x in VALID_BANDS:
         _freqband_list.append(str(int(x[0] / 1000000)) + '-' +
@@ -356,7 +359,7 @@ class TDM11_22(chirp_common.CloneModeRadio):
             return 'Tone', val / 10.0, None
 
     def _encode_tone(self, memval, mode, value, pol):
-        if mode == "":
+        if mode == '':
             memval[0].set_raw(0xFF)
             memval[1].set_raw(0xFF)
         elif mode == 'Tone':
@@ -367,11 +370,11 @@ class TDM11_22(chirp_common.CloneModeRadio):
             memval.set_value(value)
             memval[1].set_bits(flag)
         else:
-            raise Exception("Internal error: invalid mode `%s'" % mode)
+            raise Exception('Internal error: invalid mode ''%s''' % mode)
 
     def get_settings(self):
         _settings = self._memobj.settings
-        basic = RadioSettingGroup("basic", 'Settings')
+        basic = RadioSettingGroup('basic', 'Settings')
         group = RadioSettings(basic)
 
         # format raw firmware for display
@@ -379,7 +382,7 @@ class TDM11_22(chirp_common.CloneModeRadio):
             ver = 'v'
             for i in version:
                 ver += '%d' % i + '.'
-            return ver[:-3]
+            return ver[:-1]
 
         # Firmware version
         rs = RadioSettingValueString(6, 6, _fw(_settings.firmware))
@@ -444,6 +447,13 @@ class TDM11_22(chirp_common.CloneModeRadio):
         rset.set_doc('Radio Channel that is selected by Default at power-on')
         basic.append(rset)
 
+        # Selected default WX channel (setting not in factory CPS)
+        rs = RadioSettingValueList(self._wxchannel_list,
+                                   current_index=_settings.wxchannel)
+        rset = MemSetting('settings.wxchannel', 'Default WX Channel', rs)
+        rset.set_doc('Weather Channel that is selected by Default at power-on')
+        basic.append(rset)
+
         return group
 
     @classmethod
@@ -476,7 +486,7 @@ class TDM11_22(chirp_common.CloneModeRadio):
     def get_features(self):
         rf = get_default_features(self)
         rf.valid_bands = self.VALID_BANDS
-        rf.valid_modes = ["FM", "NFM"]  # 25kHz, 12.5kHz
+        rf.valid_modes = ['FM', 'NFM']  # 25kHz, 12.5kHz
         rf.valid_tuning_steps = self._steps
         rf.has_name = False
         return rf
@@ -491,7 +501,7 @@ class TDM11_22(chirp_common.CloneModeRadio):
         # Memory number
         mem.number = number
 
-        if _mem.get_raw()[:1] == b"\xFF":
+        if _mem.get_raw()[:1] == b'\xFF':
             mem.empty = True
             return mem
 
@@ -500,24 +510,24 @@ class TDM11_22(chirp_common.CloneModeRadio):
         if mem.freq == 0:
             mem.empty = True
         # tx freq can be blank
-        if _mem.txfreq.get_raw() == b"\xFF\xFF\xFF\xFF":
+        if _mem.txfreq.get_raw() == b'\xFF\xFF\xFF\xFF':
             # TX freq not set
             mem.offset = 0
-            mem.duplex = "off"
+            mem.duplex = 'off'
         else:
             # TX freq set
             offset = (int(_mem.txfreq) * 10) - mem.freq
             if offset != 0:
                 if chirp_common.is_split(self.get_features().valid_bands,
                                          mem.freq, int(_mem.txfreq) * 10):
-                    mem.duplex = "split"
+                    mem.duplex = 'split'
                     mem.offset = int(_mem.txfreq) * 10
                 elif offset < 0:
                     mem.offset = abs(offset)
-                    mem.duplex = "-"
+                    mem.duplex = '-'
                 elif offset > 0:
                     mem.offset = offset
-                    mem.duplex = "+"
+                    mem.duplex = '+'
             else:
                 mem.offset = 0
 
@@ -535,34 +545,34 @@ class TDM11_22(chirp_common.CloneModeRadio):
             LOG.error('Channel %d: get_memory: unhandled power level: 0x%02x' %
                       (mem.number, _mem.txpower))
 
-        mem.mode = _mem.narrow and "NFM" or "FM"
+        mem.mode = _mem.narrow and 'NFM' or 'FM'
 
-        mem.extra = RadioSettingGroup("Extra", "extra")
+        mem.extra = RadioSettingGroup('Extra', 'extra')
 
         # BCL (Busy Channel Lockout)
         rs = RadioSettingValueList(self._bcl_list,
                                    current_index=_mem.bcl)
-        rset = RadioSetting("bcl", "BCL", rs)
+        rset = RadioSetting('bcl', 'BCL', rs)
         mem.extra.append(rset)
 
         # Jump Freq
         rs = RadioSettingValueList(
             self._jumpfreq_list,
             current_index=_mem.jumpfreq)
-        rset = RadioSetting("jumpfreq", "Jump Freq", rs)
+        rset = RadioSetting('jumpfreq', 'Jump Freq', rs)
         mem.extra.append(rset)
 
         # Compand
         rs = RadioSettingValueList(
             self._compand_list,
             current_index=_mem.compand)
-        rset = RadioSetting("compand", "Compand", rs)
+        rset = RadioSetting('compand', 'Compand', rs)
         mem.extra.append(rset)
 
         # Scramble
         rs = RadioSettingValueList(self._scramble_list,
                                    current_index=_mem.scramble)
-        rset = RadioSetting("scramble", "Scramble", rs)
+        rset = RadioSetting('scramble', 'Scramble', rs)
         mem.extra.append(rset)
 
         return mem
@@ -571,20 +581,20 @@ class TDM11_22(chirp_common.CloneModeRadio):
         _mem = self._memobj.memory[mem.number - 1]
 
         if mem.empty:
-            _mem.set_raw("\xff" * 16)
+            _mem.set_raw('\xff' * 16)
             return
 
-        _mem.set_raw("\x00" * 16)
+        _mem.set_raw('\x00' * 16)
 
         _mem.rxfreq = mem.freq / 10
 
-        if mem.duplex == "off":
-            _mem.txfreq.fill_raw(b"\xFF")
-        elif mem.duplex == "split":
+        if mem.duplex == 'off':
+            _mem.txfreq.fill_raw(b'\xFF')
+        elif mem.duplex == 'split':
             _mem.txfreq = mem.offset / 10
-        elif mem.duplex == "+":
+        elif mem.duplex == '+':
             _mem.txfreq = (mem.freq + mem.offset) / 10
-        elif mem.duplex == "-":
+        elif mem.duplex == '-':
             _mem.txfreq = (mem.freq - mem.offset) / 10
         else:
             _mem.txfreq = mem.freq / 10
@@ -593,8 +603,8 @@ class TDM11_22(chirp_common.CloneModeRadio):
         self._encode_tone(_mem.txtone, *txtone)
         self._encode_tone(_mem.rxtone, *rxtone)
 
-        _mem.scan = mem.skip != "S"
-        _mem.narrow = mem.mode == "NFM"
+        _mem.scan = mem.skip != 'S'
+        _mem.narrow = mem.mode == 'NFM'
 
         try:
             _mem.txpower = self._power_levels.index(mem.power)
@@ -646,8 +656,8 @@ class TDM11_22(chirp_common.CloneModeRadio):
 #     # on Firmware v0.9.4
 #     # ==========
 #     """TIDRADIO TD-M11 16"""
-#     VENDOR = "TIDRADIO"
-#     MODEL = "TD-M11"
+#     VENDOR = 'TIDRADIO'
+#     MODEL = 'TD-M11'
 #     VARIANT = '16 PMR'  # EU PMR
 
 #     _upper = 16
@@ -655,7 +665,7 @@ class TDM11_22(chirp_common.CloneModeRadio):
 
 #     _ranges = [
 #         (0x0000, 0x0100),  # 16ea 16 byte channels
-#         (0x0300, 0X033F)  # settings and password
+#         (0x0300, 0X0325)  # settings and password
 #     ]
 
 #     _channel_list = ['%d' % x for x in range(1, _upper + 1)]
