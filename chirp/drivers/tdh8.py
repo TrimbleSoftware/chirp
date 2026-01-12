@@ -3372,10 +3372,10 @@ class TDH3_Plus(TDH3):
     _ponmsg_list = ["Voltage", "Message", "Picture"]
     _save_list = ["Off", "Level 1(1:1)", "Level 2(1:2)",
                   "Level 3(1:3)", "Level 4(1:4)"]
-    # _lang_map = [("Chinese", 0), ("English", 1)]
     _lang_map = [
         ("English", 0), ("中文", 1), ("Türkçe", 2), ("Pусский", 3),
         ("Deutsch", 4), ("Española", 5), ("Italiana", 6), ("Française", 7),
+        ("แบบไทย", 8),
         ]
     _short_key_map = [("None", 0), ("FM Radio", 1), ("Lamp", 2),
                       ("TONE", 4), ("Alarm", 5), ("Weather", 6),
