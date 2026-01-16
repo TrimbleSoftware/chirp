@@ -478,6 +478,7 @@ class RT900BT(chirp_common.CloneModeRadio):
     _has_single_mode = True
     _has_zone_or_channel = False
     _has_zone_names = False
+    _has_sp0 = True  # spkey addresses are shifted -1
 
     _valid_chars = chirp_common.CHARSET_ALPHANUMERIC + \
         "`~!@#$%^&*()-=_+[]\\{}|;':\",./<>?"
@@ -753,7 +754,7 @@ class RT900BT(chirp_common.CloneModeRadio):
             spec.append(rset)
 
         # Menu 23: PF2 Short
-        if self.MODEL in ["RT-900_BT"]:
+        if self._has_sp0:
             skey2_sp = _settings.skey2_sp0
             key = "settings.skey2_sp0"
         else:
@@ -766,7 +767,7 @@ class RT900BT(chirp_common.CloneModeRadio):
         spec.append(rset)
 
         # Menu 24: PF2 Long
-        if self.MODEL in ["RT-900_BT"]:
+        if self._has_sp0:
             skey2_lp = _settings.skey2_sp1
             key = "settings.skey2_sp1"
         else:
@@ -779,7 +780,7 @@ class RT900BT(chirp_common.CloneModeRadio):
         spec.append(rset)
 
         # Menu 25: PF3 Short
-        if self.MODEL in ["RT-900_BT"]:
+        if self._has_sp0:
             skey3_sp = _settings.skey2_lp
             key = "settings.skey2_lp"
         else:
@@ -1665,6 +1666,7 @@ class RT920(RT900BT):
     _has_single_mode = True
     _has_zone_or_channel = True
     _has_zone_names = True
+    _has_sp0 = False  # spkey addresses are not shifted
 
     def get_bank_model(self):
         return RT920BankModel(self, "Zones", self._banks)
