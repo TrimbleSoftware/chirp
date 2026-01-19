@@ -1582,21 +1582,21 @@ class RT920Bank(chirp_common.NamedBank):
     """RT-920 Bank"""
     def get_name(self):
         _bank = self._model._radio._memobj.zones[self._index - 1]
-
-        name = ""
-        for i in str(_bank.name):
-            if ord(i) == 0xff:
+        name = b""
+        for i in _bank.name:
+            if i in [0xff, 0x00]:
                 break
-            name += i
+            name += int(i).to_bytes(1, "big")
 
         if len(name) == 0:
-            name = "ZONE %i" % self._index
+            name = b"ZONE %i" % self._index
 
-        return name.rstrip()
+        return name.decode("gb2312")
 
     def set_name(self, name):
-        s = name.encode("ascii", errors="replace")[:12].ljust(12, b"\xff")
         _bank = self._model._radio._memobj.zones[self._index - 1]
+        s = name.encode("gb2312", errors="replace")[:len(_bank.name)]\
+            .ljust(len(_bank.name), b"\xff")
         _bank.name = s
 
 
@@ -1653,10 +1653,10 @@ class RT920(RT900BT):
     ]
 
     _zone_name_fmt = """
-    #seekto 0xC800;   // zone names (RT-920 fw V0.17)
+    #seekto 0xC800;  // 10ea 16 byte zone names (RT-920 fw V0.17)
     struct {
-      char name[12];
-      char unused0[4];
+      u8 name[10];
+      u8 unused0[6];
     } zones[%d];
     """
 
