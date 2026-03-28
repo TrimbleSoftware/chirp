@@ -1085,7 +1085,7 @@ class RT900BT(chirp_common.CloneModeRadio):
             rset = MemSetting("vfo.b.rxmod", "RX Modulation", rs)
             bchannel.append(rset)
 
-        # SSB Settings, RT-920 Only
+        # SSB Settings, RT-920, BJ7800 Only
         if self._has_hf:
 
             ssbblock = RadioSettingGroup("ssbblock", "FM/AM/SSB Modulation")
@@ -2102,11 +2102,13 @@ class RT920HF(RT920FM):
             current_index=int(_mem.bandwidth)
         )
         rset = RadioSetting("bandwidth", "Bandwidth", rs)
+        rset.set_doc("SSB Channel Bandwidth (KHz)")
         mem.extra.append(rset)
 
         # Beat Freq
         rs = RadioSettingValueInteger(-32760, 27240, int(_mem.beatfreq), 1)
         rset = RadioSetting("beatfreq", "Beat Freq Offset (Hz)", rs)
+        rset.set_doc("SSB Beat Frequency Offset (Hz)")
         mem.extra.append(rset)
 
         return mem
@@ -2156,8 +2158,10 @@ class BJ7800(RT920):
                            # 15 * 64 * 32 = 0X7800
         (0x8000, 0x8040),
         (0x9000, 0x9040),
+        (0xB000, 0xB400),  # FM, AM, HF frequencies
+        (0xC000, 0xC400),  # FM, AM, HF names
         (0xA000, 0xA140),
-        (0xD000, 0xD040)   # Radio mode hidden setting
+        (0xD000, 0xD040),   # Radio mode hidden setting
     ]
 
     _has_bt_denoise = True
