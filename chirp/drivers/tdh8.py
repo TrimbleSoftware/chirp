@@ -765,23 +765,14 @@ class TDH8(chirp_common.CloneModeRadio):
 
         chirp_common.split_tone_decode(mem, txtone, rxtone)
 
-        # mode and wide/narrow
-        # check to see if _mem struct has am per-channel?
-        try:  # check to see if _mem struct has am per-channel?
-            _am = _mem.am_modulation
-        except AttributeError:
-            _am = False
-
-        if (chirp_common.in_range(mem.freq, self._airband) or _am) and \
-            self._has_am:
-            if _mem.narrow:
-                mem.mode = 'NAM'
-            else:
-                mem.mode = 'AM'
-        elif _mem.narrow:
-            mem.mode = 'NFM'
+        if self._has_am_per_channel:
+            am_mod = _mem.am_modulation
+        elif self._has_am and chirp_common.in_range(mem.freq, self._airband):
+            am_mod = True
         else:
-            mem.mode = 'FM'
+            am_mod = False
+
+        mem.mode = ('N' if _mem.narrow else '') + ('AM' if am_mod else 'FM')
 
         # scanadd
         if not _is_vfo:
