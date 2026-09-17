@@ -19,6 +19,7 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
+from collections import defaultdict
 
 from chirp import (
     bitwise,
@@ -230,25 +231,28 @@ def validate_gmrs_memory(mem):
 def test_idents(cls, pipe):
     """tests a list of idents (magics) to see if the radio responds,
     returns the class and ident (magic) of the responding device"""
-    resp = False
-    for rclass in cls.detected_models():
-        for id in rclass._idents:  # iterate list of _idents (magics)
-            try:
-                ident = _do_ident(pipe, id)
-                if rclass.ident_mode == ident:
-                    return rclass, rclass.ident_mode
-            except errors.RadioNoResponse:
-                continue
-            except errors.RadioNoResponse:
-                resp = True
-            except Exception:
-                raise
-            LOG.error('No model match found for %r', id)
-    else:  # for
-        if resp:
-            raise errors.RadioError('Unexpected response from radio')
-        else:
-            raise errors.RadioError('Unsupported model')
+
+    # Collect all models which can respond to a particular magic sequence
+    model_by_magic = defaultdict(set)
+    for model_cls in cls.detected_models():
+        for magic in model_cls._idents:
+            model_by_magic[magic].add(model_cls)
+
+    # Test each unique magic sequence only once
+    for magic, model_classes in model_by_magic.items():
+        try:
+            response = _do_ident(pipe, magic)
+        except errors.RadioNoResponse:
+            continue
+
+        # Matching to models which share this magic code
+        for model_class in model_classes:
+            if model_class.ident_mode == response:
+                return model_class, magic
+
+        LOG.warning(f'No model match found for magic: {magic!r}')
+
+    raise errors.RadioError('Unsupported model')
 
 
 @directory.register
