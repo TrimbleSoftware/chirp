@@ -910,10 +910,10 @@ class TDH8(chirp_common.CloneModeRadio):
 
         # offset direction
         if self._has_offsetdir:
-            _offset_list = ['', '-', '+']  # None/OFF, Minus/Neg, Plus/Pos
-            _mem.offsetdir = _offset_list.index(mem.duplex)
-            if mem.duplex == '':
-                _mem.offsetdir = 0
+            try:
+                _mem.offsetdir = ['', '-', '+'].index(mem.duplex)  # '' = Off
+            except ValueError:
+                _mem.offsetdir = 0  # Also Off
 
         # name
         if not _is_vfo:
