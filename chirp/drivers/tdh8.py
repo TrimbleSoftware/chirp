@@ -264,7 +264,6 @@ class TDH8(chirp_common.CloneModeRadio):
     BLOCKSIZE_UP = 0x20
     _memsize = 0x1fef  # 0x1eef
     _ranges_main = [(0x0000, _memsize)]
-    # _mmap = bytearray(_memsize)
     _memobj = bytearray(_memsize)
     _mem_params = {
         'channels': 200,
@@ -305,8 +304,7 @@ class TDH8(chirp_common.CloneModeRadio):
     _valid_chars = TDH8_CHARSET
     _tx_power = [chirp_common.PowerLevel('Low', watts=1.00),
                  chirp_common.PowerLevel('Mid', watts=4.00),
-                 chirp_common.PowerLevel('High', watts=8.00),
-                 ]
+                 chirp_common.PowerLevel('High', watts=8.00)]
     _steps = [2.5, 5.0, 6.25, 10.0, 12.5, 25.0, 50.0]
     # maps DTMF chars to binary values the radio uses
     _dtmf_code_dict = {
@@ -337,8 +335,7 @@ class TDH8(chirp_common.CloneModeRadio):
     _vfo_workmode_list = ['VFO', 'VFO+Channel', 'Channel']
     _fmworkmode_list = ['VFO', 'CH']
     _short_press_list = ['None', 'FM Radio', 'Lamp', 'Monitor',
-                         'TONE', 'Alarm', 'Weather',
-                         ]
+                         'TONE', 'Alarm', 'Weather']
     _long_press_list = _short_press_list
     _micgain_list = ['%02d' % x for x in range(0, 33)]
     _voxgain_list = ['Off', '1', '2', '3', '4', '5']
@@ -1592,9 +1589,7 @@ class TDH8(chirp_common.CloneModeRadio):
                 setting.run_apply_callback()
 
     def get_sub_devices(self):
-        return [TDH8VhfUhf(self._mmap),
-                TDH8FM(self._mmap),
-                ]
+        return [TDH8VhfUhf(self._mmap), TDH8FM(self._mmap)]
 
 
 class TDH8VhfUhf(TDH8):
@@ -1748,8 +1743,7 @@ class TDH8_GMRS(TDH8):
     _txbands = [(136000000, 175000000), (400000000, 521000000)]
     _tx_power = [chirp_common.PowerLevel('Low', watts=1.00),
                  chirp_common.PowerLevel('Mid', watts=4.00),
-                 chirp_common.PowerLevel('High', watts=8.00),
-                 ]
+                 chirp_common.PowerLevel('High', watts=8.00)]
 
     def validate_memory(self, mem):
         msgs = super().validate_memory(mem)
@@ -1803,8 +1797,7 @@ class TDH3(TDH8):
     _has_brightness = True
 
     _tx_power = [chirp_common.PowerLevel('Low', watts=2.00),
-                 chirp_common.PowerLevel('High', watts=5.00),
-                 ]
+                 chirp_common.PowerLevel('High', watts=5.00)]
     _lang_map = [('Chinese', 0), ('English', 1)]
     _brightness_map = [("1", 4), ("2", 3), ("3", 2), ("4", 1), ("5", 0)]
 
@@ -1812,8 +1805,7 @@ class TDH3(TDH8):
     _step_list = ['%2.2fK' % x for x in _steps]
     _scramble_list = ['Off'] + ['%02d' % x for x in range(1, 17)]
     _short_press_list = ['None', 'FM Radio', 'Lamp', 'Monitor',
-                         'TONE', 'Alarm', 'Weather',
-                         ]
+                         'TONE', 'Alarm', 'Weather']
     _long_press_list = _short_press_list
     _micgain_list = ['%02d' % x for x in range(0, 10)]
     _roger_list = ['Off', 'TONE1', 'TONE2']
@@ -2028,9 +2020,7 @@ class TDH3(TDH8):
         roger_settings.append(mset)
 
     def get_sub_devices(self):
-        return [TDH3VhfUhf(self._mmap),
-                TDH3FM(self._mmap),
-                ]
+        return [TDH3VhfUhf(self._mmap), TDH3FM(self._mmap)]
 
 
 class TDH3VhfUhf(TDH3):
@@ -2107,12 +2097,8 @@ class TDH3_Plus(TDH3):
     ident_mode = TDH3.ident_mode
     _ham = False
     _gmrs = False
-    # _memsize = 0x1fef
-    # _memsize = 0x2000
     _memsize = 0x3140
-    # _ranges_main = [(0x0000, _memsize)]
-    _ranges_main = [(0x0000, 0x1f80),
-                    (0x3000, 0x3140)]
+    _ranges_main = [(0x0000, 0x1f80), (0x3000, 0x3140)]
     _mmap = bytearray(_memsize)
     FORMATS = [directory.register_format('%s %s' %
                                          (VENDOR, MODEL), '*.td')]
@@ -2127,21 +2113,18 @@ class TDH3_Plus(TDH3):
         ('English', 0), ('中文', 1), ('Türkçe', 2), ('Pусский', 3),
         ('Deutsch', 4), ('Española', 5), ('Italiana', 6), ('Française', 7),
         ('แบบไทย', 8),
-        ]
+    ]
     _hangtime_list = ['%1.1fs' % (x / 2) for x in range(1, 21)]
     _rx_modulation_list = ['FM', 'AM']
     _dtmf_resp_list = ['None', 'Ring', 'Callback', 'Ring+Callback']
     _vfo_workmode_list = ['VFO', 'VFO+Channel', 'Channel']
     _short_press_list = ['None', 'FM Radio', 'Lamp', 'None', 'Tone',
-                         'Alarm', 'Weather', 'PTT2', 'OD PTT',
-                         ]
+                         'Alarm', 'Weather', 'PTT2', 'OD PTT']
     _long_press_list = ['None', 'FM Radio', 'Lamp', 'Cancel Sq', 'Tone',
-                        'Alarm', 'Weather',
-                        ]
+                        'Alarm', 'Weather']
     _ponmsg_list = ['Voltage', 'Message', 'Picture']
     _save_list = ['Off', 'Level 1(1:1)', 'Level 2(1:2)',
-                  'Level 3(1:3)', 'Level 4(1:4)',
-                  ]
+                  'Level 3(1:3)', 'Level 4(1:4)']
     _steps = [2.5, 5.0, 6.25, 10.0, 12.5, 25.0, 50.0, 0.5, 8.33]
     _step_list = ['%.3gK' % x for x in _steps]
     _display_list = ['Single', 'Dual', 'Classic']
@@ -2150,7 +2133,7 @@ class TDH3_Plus(TDH3):
         'Orange', 'L. Blue', 'Cyan', 'Gray', 'D. Blue',
         'L. Green', 'Brown', 'Pink', 'B. Red', 'G. Blue',
         'L. Gray', 'LG. Blue', 'LB. Blue',
-        ]
+    ]
     _fmrec_shortname = 'FM Interrupt'
     _txbands = [(136000000, 174000000), (200000000, 600000000)]
     _rxbands = [(18000000, 600000000)]
@@ -2242,9 +2225,7 @@ class TDH3_Plus(TDH3):
             return False
 
     def get_sub_devices(self):
-        return [TDH3_PlusVhfUhf(self._mmap),
-                TDH3_PlusFM(self._mmap),
-                ]
+        return [TDH3_PlusVhfUhf(self._mmap), TDH3_PlusFM(self._mmap)]
 
 
 class TDH3_PlusVhfUhf(TDH3_Plus):
@@ -2310,27 +2291,21 @@ class TDH9(TDH3_Plus):
     ident_mode = b'TDH9\xff\xff\xff\x4e'
     _gmrs = False
     _ham = False
-    # _memsize = 0x2000
     _memsize = 0x3140
-    # _ranges_main = [(0x0000, _memsize)]
-    _ranges_main = [(0x0000, 0x1f80),
-                    (0x3000, 0x3140)]
+    _ranges_main = [(0x0000, 0x1f80), (0x3000, 0x3140)]
     _mmap = bytearray(_memsize)
     _tx_power = [chirp_common.PowerLevel('Low',  watts=1.00),
                  chirp_common.PowerLevel('Mid',  watts=5.00),
-                 chirp_common.PowerLevel('High', watts=10.00),
-                 ]
+                 chirp_common.PowerLevel('High', watts=10.00)]
     _has_dtmf_len = False
     _has_dtmf_terminated = not _has_dtmf_len
     _has_freq_ranger = True
     _has_pf2_button = True
     _has_top_button = True
     _short_press_list = ['None', 'FM Radio', 'GNSS SW', 'None', 'Tone',
-                         'Alarm', 'Weather', 'PTT2', 'OD PTT',
-                         ]
+                         'Alarm', 'Weather', 'PTT2', 'OD PTT']
     _long_press_list = ['None', 'FM Radio', 'GNSS SW', 'Cancel Sq', 'Tone',
-                        'Alarm', 'Weather',
-                        ]
+                        'Alarm', 'Weather']
 
     _end_fromat = TDH3_Plus._end_fromat + """
     // H9 GNSS
@@ -2363,9 +2338,7 @@ class TDH9(TDH3_Plus):
         return rf
 
     def get_sub_devices(self):
-        return [TDH9VhfUhf(self._mmap),
-                TDH9FM(self._mmap),
-                ]
+        return [TDH9VhfUhf(self._mmap), TDH9FM(self._mmap)]
 
 
 class TDH9VhfUhf(TDH9):
@@ -2477,8 +2450,7 @@ class RT730(TDH8):
     _lang_map = [('Chinese', 0), ('English', 1)]
     _scramble_list = ['Disabled', 'Enabled']
     _short_press_list = ['None', 'Scan', 'FM Radio', 'Warn', 'TONE',
-                         'Weather', 'Copy CH',
-                         ]
+                         'Weather', 'Copy CH']
     _long_press_list = _short_press_list + ['Monitor']
     _voxgain_list = ['Off', '1', '2', '3']
     _voxdelay_list = ['0.5s', '1.0s', '2.0s', '3.0s']
@@ -2699,9 +2671,7 @@ class RT730(TDH8):
         roger_settings.append(mset)
 
     def get_sub_devices(self):
-        return [RT730VhfUhf(self._mmap),
-                RT730FM(self._mmap),
-                ]
+        return [RT730VhfUhf(self._mmap), RT730FM(self._mmap)]
 
 
 class RT730VhfUhf(RT730):
@@ -2736,8 +2706,7 @@ class TDH8_3rd_Gen(TDH3):
     _has_brightness = True
     _tx_power = [chirp_common.PowerLevel('Low',  watts=1.00),
                  chirp_common.PowerLevel('Mid',  watts=5.00),
-                 chirp_common.PowerLevel('High', watts=10.00),
-                 ]
+                 chirp_common.PowerLevel('High', watts=10.00)]
     _roger_list = ['Off', 'TONE1', 'TONE2']
 
     def get_features(self):
@@ -2757,9 +2726,7 @@ class TDH8_3rd_Gen(TDH3):
         roger_settings.append(mset)
 
     def get_sub_devices(self):
-        return [TDH8G3VhfUhf(self._mmap),
-                TDH8G3FM(self._mmap),
-                ]
+        return [TDH8G3VhfUhf(self._mmap), TDH8G3FM(self._mmap)]
 
 
 class TDH8G3VhfUhf(TDH8_3rd_Gen):
@@ -2838,8 +2805,7 @@ class TDH8_4th_Gen(TDH3_Plus):
     _gmrs = False
     _tx_power = [chirp_common.PowerLevel('Low',  watts=1.00),
                  chirp_common.PowerLevel('Mid',  watts=5.00),
-                 chirp_common.PowerLevel('High', watts=10.00),
-                 ]
+                 chirp_common.PowerLevel('High', watts=10.00)]
     _has_pf2_button = True
     _has_top_button = True
 
@@ -2851,9 +2817,7 @@ class TDH8_4th_Gen(TDH3_Plus):
         return rf
 
     def get_sub_devices(self):
-        return [TDH8G4VhfUhf(self._mmap),
-                TDH8G4FM(self._mmap),
-                ]
+        return [TDH8G4VhfUhf(self._mmap), TDH8G4FM(self._mmap)]
 
 
 class TDH8G4VhfUhf(TDH8_4th_Gen):
