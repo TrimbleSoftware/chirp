@@ -1574,7 +1574,7 @@ class FMSubDeviceMixin:
         rf.valid_name_length = 0
         rf.valid_skips = []
         rf.valid_special_chans = self._special_channels
-        rf.valid_tuning_steps = [5.0]
+        rf.valid_tuning_steps = [100.0]  # Ensure increments of 0.1Mhz
         rf.valid_tmodes = []
         rf.valid_tones = []
         return rf
@@ -1587,32 +1587,27 @@ class FMSubDeviceMixin:
 
     def get_memory(self, number):
         mem = chirp_common.Memory()
+        mem.mode = 'WFM'
+        mem.immutable += ['mode']
+        mem.offset = 0
 
         if isinstance(number, int) and number < 0:
-            number = self._special_channels[number +
-                                            len(self._special_channels)]
+            number = self._special_channels[-number]
+
         if isinstance(number, str):
-            mem.number = -len(self._special_channels) + \
-                self._special_channels.index(number)
-            mem.offset = 0
+            mem.number = -self._special_channels.index(number)
             mem.extd_number = number
             _mem = self._memobj.fmbvfo
+
         else:
             mem.number = number
             _mem = self._memobj.fmb[number - 1]
 
-        if _mem.get_raw()[:1] == b'\xff':
-            mem.empty = True
-            return mem
+            if not self._memobj.fmbflags.used[mem.number - 1]:
+                mem.empty = True
+                return mem
 
-        freq = int(_mem.rxfreq) * 100000
-
-        if freq == 0:
-            mem.empty = True
-
-        mem.freq = freq
-        mem.mode = 'WFM'
-        mem.immutable += ['mode']
+        mem.freq = int(_mem.rxfreq) * 100000
 
         return mem
 
@@ -1621,16 +1616,14 @@ class FMSubDeviceMixin:
             _mem = self._memobj.fmbvfo
         else:
             _mem = self._memobj.fmb[mem.number - 1]
-
             _fm_flag = self._memobj.fmbflags.used[mem.number - 1]
-            if mem.freq > 0 or not mem.empty:
-                _fm_flag.set_value(0b1)  # set the FMB used flag
-            else:
-                _fm_flag.set_value(0b0)  # clear the FMB used flag
 
-        if mem.empty:
-            _mem.rxfreq = 0
-            return
+            if mem.empty:
+                _fm_flag.set_value(0b0)  # clear the FMB used flag
+                _mem.rxfreq.fill_raw(b'\xFF')
+                return
+            else:
+                _fm_flag.set_value(0b1)  # set the FMB used flag
 
         _mem.rxfreq = int(mem.freq / 100000)
 
