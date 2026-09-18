@@ -480,7 +480,7 @@ class TDH8(chirp_common.CloneModeRadio):
     };
     """
 
-    _end_fromat = """
+    _end_format = """
     """
 
     #  TD-H8 Gen 2
@@ -650,7 +650,7 @@ class TDH8(chirp_common.CloneModeRadio):
         fmt = (self._mem_format + self._common_format +
                self._name_format + self._button_format +
                self._settings_format + self._memory_format +
-               self._end_fromat) % self._mem_params
+               self._end_format) % self._mem_params
         self._memobj = bitwise.parse(fmt, self._mmap)
 
     def sync_in(self):
@@ -1896,7 +1896,7 @@ class TDH3(TDH8):
     };
     """
 
-    _end_fromat = """
+    _end_format = """
     // bluetooth
     #seekto 0x1f38;
     struct {
@@ -2149,7 +2149,7 @@ class TDH3_Plus(TDH3):
     _img_file_header = ident_mode + (b'\xff' * 16)  # CHIRP .img file header
     _img_file_offset = len(_img_file_header)  # offset of data in CHIRP .img
 
-    _end_fromat = """
+    _end_format = """
     // bluetooth
     #seekto 0x1f29;
     struct {
@@ -2307,7 +2307,7 @@ class TDH9(TDH3_Plus):
     _long_press_list = ['None', 'FM Radio', 'GNSS SW', 'Cancel Sq', 'Tone',
                         'Alarm', 'Weather']
 
-    _end_fromat = TDH3_Plus._end_fromat + """
+    _end_format = TDH3_Plus._end_format + """
     // H9 GNSS
     #seekto 0x3066;
     struct { // GNSS config data, 0x15 bytes
@@ -2541,7 +2541,7 @@ class RT730(TDH8):
     };
     """
 
-    _end_fromat = """
+    _end_format = """
     """
 
     # RT-730
