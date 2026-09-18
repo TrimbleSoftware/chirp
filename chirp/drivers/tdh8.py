@@ -19,7 +19,10 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
+import logging
+import struct
 from collections import defaultdict
+from textwrap import dedent
 
 from chirp import (
     bitwise,
@@ -29,10 +32,8 @@ from chirp import (
     directory,
     errors,
     memmap,
-    # platform,
-    util,
+    util
 )
-
 from chirp.settings import (
     RadioSetting,
     RadioSettings,
@@ -44,14 +45,8 @@ from chirp.settings import (
     RadioSettingValueList,
     RadioSettingValueMap,
     RadioSettingValueString,
-    MemSetting,
+    MemSetting
 )
-
-from textwrap import dedent
-
-import logging
-import struct
-# from datetime import datetime
 
 LOG = logging.getLogger(__name__)
 
