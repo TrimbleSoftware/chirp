@@ -1533,15 +1533,16 @@ class TDH8VhfUhf(TDH8):
     VARIANT = 'VHF/UHF'
 
 
-class TDH8FM(TDH8):
-    """TIDRADIO TD-H8 FM broadcast radio subdevice"""
-    VENDOR = 'TIDRADIO'
-    MODEL = 'TD-H8'
+class FMSubDeviceMixin:
+    """Mixin for FM broadcast radio subdevice.
+
+    This object is intended to be sub-classed _before_ a Radio class to create
+    a broadcast FM radio subdevice from it.
+    """
+
     VARIANT = 'FM Broadcast'
 
-    _mem_params = TDH8._mem_params
-
-    _fmband = [(76000000, 108000000)]  # in Mhz, 76.0-108.0 MHz
+    _fmband = [(76000000, 108000000)]  # 76.0 - 108.0 MHz
     _special_channels = ['VFO']
 
     def get_features(self):
@@ -1633,9 +1634,9 @@ class TDH8FM(TDH8):
 
         _mem.rxfreq = int(mem.freq / 100000)
 
-    def validate_memory(self, mem):
-        msgs = super().validate_memory(mem)
-        return msgs
+
+class TDH8FM(FMSubDeviceMixin, TDH8):
+    """TIDRADIO TD-H8 FM broadcast radio subdevice"""
 
 
 @directory.register
@@ -1951,13 +1952,10 @@ class TDH3VhfUhf(TDH3):
     VARIANT = 'VHF/UHF'
 
 
-class TDH3FM(TDH8FM, TDH3):
+class TDH3FM(FMSubDeviceMixin, TDH3):
     """TIDRADIO TD-H3 FM broadcast radio subdevice"""
-    VENDOR = 'TIDRADIO'
-    MODEL = 'TD-H3'
-    VARIANT = 'FM Broadcast'
-    _fmband = [(65000000, 108000000)]  # in Mhz, 65.0-108.0 MH
-    _mem_params = TDH3._mem_params
+
+    _fmband = [(65000000, 108000000)]  # 65.0 - 108.0 MHz
 
 
 @directory.register
@@ -2158,12 +2156,10 @@ class TDH3_PlusVhfUhf(TDH3_Plus):
     VARIANT = 'VHF/UHF'
 
 
-class TDH3_PlusFM(TDH3FM):
+class TDH3_PlusFM(FMSubDeviceMixin, TDH3_Plus):
     """TIDRADIO TD-H3 Plus FM broadcast subdevice"""
-    VENDOR = 'TIDRADIO'
-    MODEL = 'TD-H3-Plus'
-    VARIANT = 'FM Broadcast'
-    _fmband = [(87000000, 108000000)]  # in Mhz, 87.0-108.0 MH
+
+    _fmband = [(87000000, 108000000)]  # 87.0 - 108.0 MHz
 
 
 @directory.register
@@ -2278,16 +2274,10 @@ class TDH9VhfUhf(TDH9):
     VARIANT = 'VHF/UHF'
 
 
-class TDH9FM(TDH9, TDH8FM):
+class TDH9FM(FMSubDeviceMixin, TDH9):
     """TIDRADIO H9 FM broadcast radio subdevice"""
-    VENDOR = 'TIDRADIO'
-    MODEL = 'TD-H9'
-    VARIANT = 'FM Broadcast'
-    _fmband = [(87000000, 108000000)]  # in Mhz, 87.0-108.0 MH
 
-    def get_features(self):
-        rf = TDH8FM.get_features(self)
-        return rf
+    _fmband = [(87000000, 108000000)]  # 87.0 - 108.8 Mhz
 
 
 @directory.register
@@ -2595,15 +2585,8 @@ class RT730VhfUhf(RT730):
     VARIANT = 'VHF/UHF'
 
 
-class RT730FM(RT730, TDH8FM):
+class RT730FM(FMSubDeviceMixin, RT730):
     """Radtel RT-730 FM broadcast radio subdevice"""
-    VENDOR = 'Radtel'
-    MODEL = 'RT-730'
-    VARIANT = 'FM Broadcast'
-
-    def get_features(self):
-        rf = TDH8FM.get_features(self)
-        return rf
 
 
 @directory.register
@@ -2653,16 +2636,10 @@ class TDH8G3VhfUhf(TDH8_3rd_Gen):
     VARIANT = 'VHF/UHF'
 
 
-class TDH8G3FM(TDH8FM, TDH8_3rd_Gen):
+class TDH8G3FM(FMSubDeviceMixin, TDH8_3rd_Gen):
     """TIDRADIO TD-H8 3rd Gen FM broadcast radio subdevice"""
-    VENDOR = 'TIDRADIO'
-    MODEL = 'TD-H8 G3'
-    VARIANT = 'FM Broadcast'
-    _fmband = [(87000000, 108000000)]  # in Mhz, 87.0-108.0 MH
 
-    def get_features(self):
-        rf = TDH8FM.get_features(self)
-        return rf
+    _fmband = [(87000000, 108000000)]  # 87.0 - 108.0 MHz
 
 
 @directory.register
@@ -2747,16 +2724,10 @@ class TDH8G4VhfUhf(TDH8_4th_Gen):
     VARIANT = 'VHF/UHF'
 
 
-class TDH8G4FM(TDH8FM, TDH8_4th_Gen):
+class TDH8G4FM(FMSubDeviceMixin, TDH8_4th_Gen):
     """TIDRADIO TD-H8 4th Gen FM broadcast radio subdevice"""
-    VENDOR = 'TIDRADIO'
-    MODEL = 'TD-H8 G4'
-    VARIANT = 'FM Broadcast'
-    _fmband = [(87000000, 108000000)]  # in Mhz, 87.0-108.0 MH
 
-    def get_features(self):
-        rf = TDH8FM.get_features(self)
-        return rf
+    _fmband = [(87000000, 108000000)]  # 87.0 - 108.0 MHz
 
 
 @directory.register
