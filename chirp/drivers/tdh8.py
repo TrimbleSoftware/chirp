@@ -352,6 +352,8 @@ class TDH8(chirp_common.CloneModeRadio):
     _backlight_list = ['CONT', '5s', '10s', '15s', '30s']
     _breath_led_list = ['Off', '5s', '10s', '15s', '30s']
     _ponmsg_list = ['Off', 'Msg', 'Icon']
+    _mdf_list = ["Frequency", "Name"]
+    _mdf_name_template = "MDF-%s"
 
     _fmrec_shortname = 'Allow Receive'
 
@@ -1419,6 +1421,18 @@ class TDH8(chirp_common.CloneModeRadio):
             mset = MemSetting('settings.brightness', 'Brightness', rs)
             mset.set_doc('Set the radio display brightness.')
             spec_settings.append(mset)
+
+        # MDF-A / Display Type A
+        for channel in ('a', 'b'):
+            rs = RadioSettingValueList(
+                self._mdf_list,
+                current_index=getattr(settings_mem, f"mdf{channel}"))
+            mset = MemSetting(
+                f'settings.mdf{channel}',
+                self._mdf_name_template % channel.upper(), rs)
+            mset.set_doc('Choose how channels are displayed.')
+            spec_settings.append(mset)
+
         # breath LED
         rs = RadioSettingValueList(self._breath_led_list,
                                    current_index=settings_mem.breathled)
@@ -2056,6 +2070,9 @@ class TDH3_Plus(TDH3):
     _steps = [2.5, 5.0, 6.25, 10.0, 12.5, 25.0, 50.0, 0.5, 8.33]
     _step_list = ['%.3gK' % x for x in _steps]
     _display_list = ['Single', 'Dual', 'Classic']
+    _mdf_list = ["Freq + Number", "Name + Number"]
+    _mdf_name_template = "Display Type-%s"
+
     _menucolor_list = [
         'Blue', 'Red', 'Green', 'Yellow', 'Purple',
         'Orange', 'L. Blue', 'Cyan', 'Gray', 'D. Blue',
