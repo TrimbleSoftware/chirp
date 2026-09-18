@@ -668,14 +668,17 @@ class TDH8(chirp_common.CloneModeRadio):
         """Display raw channel, name and flag data from the radio image"""
         if isinstance(number, str):
             _vfo_idx = self._special_channels.index(number)
-            return repr(self._memobj.vfo[_vfo_idx]) + \
+            return (
+                repr(self._memobj.vfo[_vfo_idx]) +
                 repr(self._memobj.vfo_offsets[_vfo_idx])
+            )
         else:
-            return repr(self._memobj.memory[number]) + \
-                repr(self._memobj.names[number - 1]) + \
-                    repr(self._memobj.scanadd[number - 1]) + \
-                        repr(self._memobj.channelflags.
-                            used[number - 1])
+            return (
+                repr(self._memobj.memory[number]) +
+                repr(self._memobj.names[number - 1]) +
+                repr(self._memobj.scanadd[number - 1]) +
+                repr(self._memobj.channelflags.used[number - 1])
+            )
 
     def _decode_tone(self, val):
         """decode CTCSS/DTCS values from the radio image"""
