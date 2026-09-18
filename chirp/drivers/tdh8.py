@@ -828,6 +828,7 @@ class TDH8(chirp_common.CloneModeRadio):
             mset = MemSetting('spec', 'Spec', rs)
             mset.set_doc('Set if Channel \'Spec\' is enabled.')
             mem.extra.append(mset)
+
         # ptt id
         if self._has_pttid:
             rs = RadioSettingValueList(self._pttid_list,
@@ -837,18 +838,21 @@ class TDH8(chirp_common.CloneModeRadio):
                          'Valid values are: '
                          ', '.join(x for x in self._pttid_list))
             mem.extra.append(mset)
+
         # busy lock
         if self._has_bcl:
             rs = RadioSettingValueBoolean(_mem.bcl)
             mset = MemSetting('bcl', 'Busy Lock', rs)
             mset.set_doc('Set if TX Busy Lock during RX is enabled.')
             mem.extra.append(mset)
+
         # hopping rx
         if self._has_freqhop:
             rs = RadioSettingValueBoolean(_mem.freqhop)
             mset = MemSetting('freqhop', 'Hopping RX', rs)
             mset.set_doc('Set if frequency hopping is enabled during TX.')
             mem.extra.append(mset)
+
         # scramble
         if self._has_scramble:
             rs = RadioSettingValueList(self._scramble_list,
@@ -1014,18 +1018,21 @@ class TDH8(chirp_common.CloneModeRadio):
         mset = MemSetting('settings.squelch', 'Squelch Level', rs)
         mset.set_doc('Set the radio squelch Level.')
         basic_settings.append(mset)
+
         # voice prompt
         rs = RadioSettingValueBoolean(settings_mem.voiceprompt)
         mset = MemSetting('settings.voiceprompt', 'Voice Prompt', rs)
         mset.set_doc('Set if radio button presses and menu items '
                      'are voice announced.')
         basic_settings.append(mset)
+
         # auto lock
         rs = RadioSettingValueBoolean(settings_mem.keyautolock)
         mset = MemSetting('settings.keyautolock', 'Keypad Lock', rs)
         mset.set_doc('Set to have radio keypad automatically locked '
                      'after a certian amount of time.')
         basic_settings.append(mset)
+
         # pri tx
         if self._has_pritx:
             rs = RadioSettingValueList(self._pritx_list,
@@ -1035,41 +1042,48 @@ class TDH8(chirp_common.CloneModeRadio):
                          'MAIN TXs on the current channel, '
                          'Busy TXs on the channel that had the last RX.')
             basic_settings.append(mset)
+
         # key beep
         rs = RadioSettingValueBoolean(settings_mem.beep)
         mset = MemSetting('settings.beep', 'Beep', rs)
         mset.set_doc('Set to have radio keypad beep with each key press.')
         basic_settings.append(mset)
+
         # vox gain
         rs = RadioSettingValueList(self._voxgain_list,
                                    current_index=settings_mem.voxgain)
         mset = MemSetting('settings.voxgain', 'VOX Gain', rs)
         mset.set_doc('Set the VOX gain level.')
         basic_settings.append(mset)
+
         # vox delay
         rs = RadioSettingValueList(self._voxdelay_list,
                                    current_index=settings_mem.voxdelay)
         mset = MemSetting('settings.voxdelay', 'VOX Delay', rs)
         mset.set_doc('Set the VOX delay time.')
         basic_settings.append(mset)
+
         # LED disp TX
         rs = RadioSettingValueBoolean(settings_mem.txled)
         mset = MemSetting('settings.txled', 'Screen Display-TX', rs)
         mset.set_doc('Set to have radio screen backlight display when '
                      'TX is active.')
         basic_settings.append(mset)
+
         # LED disp RX
         rs = RadioSettingValueBoolean(settings_mem.rxled)
         mset = MemSetting('settings.rxled', 'Screen Display-RX', rs)
         mset.set_doc('Set to have radio screen backlight display when '
                      'RX is active.')
         basic_settings.append(mset)
+
         # backlight control
         rs = RadioSettingValueList(self._backlight_list,
                                    current_index=settings_mem.ligcon)
         mset = MemSetting('settings.ligcon', 'Backlight Timer', rs)
         mset.set_doc('Set the how long the backlight stays on(s).')
         basic_settings.append(mset)
+
         # time-out-timer TOT
         rs = RadioSettingValueList(self._tot_list,
                                    current_index=settings_mem.tot)
@@ -1077,8 +1091,10 @@ class TDH8(chirp_common.CloneModeRadio):
         mset.set_doc('Set the amount of time that TX can be continuous '
                      'before timing out(s).')
         basic_settings.append(mset)
+
         # roger beep
         self.get_settings_roger(basic_settings, settings_mem)
+
         # language
         _lang_mem = self._memobj.menu.lang if hasattr(self._memobj, 'menu') \
             else self._memobj.settings.lang
@@ -1097,12 +1113,14 @@ class TDH8(chirp_common.CloneModeRadio):
         mset = MemSetting('settings.fmworkmode', 'FM Workmode', rs)
         mset.set_doc('Set the FM broadcast workmode.')
         fm_settings.append(mset)
+
         # default FM channel
         rs = RadioSettingValueMap(self._fmchannels_map, settings_mem.fmdefch)
         mset = MemSetting('settings.fmdefch', 'Default Channel', rs)
         mset.set_doc('Set the default FM broadcast channel '
                      'for \'CH\' workmode.')
         fm_settings.append(mset)
+
         # FM interrupt
         rs = RadioSettingValueBoolean(settings_mem.fmrec)
         mset = MemSetting('settings.fmrec', self._fmrec_shortname, rs)
@@ -1113,12 +1131,14 @@ class TDH8(chirp_common.CloneModeRadio):
         """Scan Settings Items"""
         if self._has_freq_ranger:
             _menu = self._memobj.menu
+
         # Scan mode
         rs = RadioSettingValueList(self._scanmode_list,
                                    current_index=settings_mem.scanmode)
         mset = MemSetting('settings.scanmode', 'Scan Mode', rs)
         mset.set_doc('Set the scan resume mode.')
         scan_settings.append(mset)
+
         # Scan hangtime
         if self._has_scan_hangtime:
             rs = RadioSettingValueList(self._hangtime_list,
@@ -1126,6 +1146,7 @@ class TDH8(chirp_common.CloneModeRadio):
             mset = MemSetting('menu.hangtime', 'Scan Hang Time', rs)
             mset.set_doc('Set the scan resume mode timeout value(s).')
             scan_settings.append(mset)
+
         # Freq ranger
         if self._has_freq_ranger:
             # Freq ranger high
@@ -1135,6 +1156,7 @@ class TDH8(chirp_common.CloneModeRadio):
             mset.set_doc('Set the VFO scan frequency ranger upper '
                          'limit value(MHz).')
             scan_settings.append(mset)
+
             # Freq ranger low
             rs = RadioSettingValueInteger(0, 999, _menu.ranger_low)
             mset = MemSetting('menu.ranger_low', 'Freq Ranger Lower Limit',
@@ -1153,6 +1175,7 @@ class TDH8(chirp_common.CloneModeRadio):
         mset = MemSetting('group.code', 'Group Code', rs)
         mset.set_doc('Set the radio DTMF Group Code.')
         dtmf_settings.append(mset)
+
         # ID Code
         _codeobj = self._memobj.id.code
         _code = self.decode_dtmf(_codeobj)
@@ -1163,8 +1186,9 @@ class TDH8(chirp_common.CloneModeRadio):
                                 _codeobj, False)
         rset.set_doc('Set the radio DTMF ID Code.')
         dtmf_settings.append(rset)
+
+        # Stored DTMF Codes
         if self._has_stored_dtmf:
-            # Stored DTMF Codes
             for i in range(0, self._mem_params['dtmf_strings']):
                 _codeobj = dtmf_mem[i].code
                 _code = self.decode_dtmf(_codeobj, self._has_dtmf_len)
@@ -1181,6 +1205,7 @@ class TDH8(chirp_common.CloneModeRadio):
                 rset.set_doc('Set the code sequence for stored DTMF-%i '
                              'sequence.' % (i + 1))
                 dtmf_settings.append(rset)
+
         # PTT-ID BOT
         _codeobj = self._memobj.pttid.bot.code
         _code = self.decode_dtmf(_codeobj, True)
@@ -1193,7 +1218,8 @@ class TDH8(chirp_common.CloneModeRadio):
                                 _codeobj, True)
         rset.set_doc('Set the DTMF sequence for the \'BOT\' PTT ID Code.')
         dtmf_settings.append(rset)
-        # PTT-ID EOT
+
+       # PTT-ID EOT
         _codeobj = self._memobj.pttid.eot.code
         _code = self.decode_dtmf(_codeobj, True)
         rs = RadioSettingValueString(0, self._mem_params['dtmf_len'] - 1,
@@ -1205,6 +1231,7 @@ class TDH8(chirp_common.CloneModeRadio):
                                 _codeobj, True)
         rset.set_doc('Set the DTMF sequence for the \'EOT\' PTT ID Code.')
         dtmf_settings.append(rset)
+
         # Stun code
         if self._has_stuncode:
             _codeobj = self._memobj.remote.stun.code
@@ -1220,6 +1247,7 @@ class TDH8(chirp_common.CloneModeRadio):
             rset.set_doc('Set the DTMF sequence for the remote radio '
                          '\'stun\' function.')
             dtmf_settings.append(rset)
+
         # Kill code
         if self._has_killcode:
             _codeobj = self._memobj.remote.kill.code
@@ -1235,11 +1263,13 @@ class TDH8(chirp_common.CloneModeRadio):
             rset.set_doc('Set the DTMF sequence for the remote radio '
                          '\'kill\' function.')
             dtmf_settings.append(rset)
+
         # DTMF side tones
         rs = RadioSettingValueBoolean(_settingsobj.dtmfst)
         mset = MemSetting('settings.dtmfst', 'DTMF Side Tones', rs)
         mset.set_doc('Set to make DTMF side tones audible.')
         dtmf_settings.append(mset)
+
         # extra DTMF setttigs
         if self._has_dtmf_extra:
             # DTMF decode
@@ -1247,12 +1277,14 @@ class TDH8(chirp_common.CloneModeRadio):
             mset = MemSetting('settings.dtmfdecode', 'DTMF Decode', rs)
             mset.set_doc('Set to decode DTMF tones.')
             dtmf_settings.append(mset)
+
             # DTMF reset timer
             rs = RadioSettingValueList(self._dtmf_reset_list,
                                        current_index=_settingsobj.dtmfautorst)
             mset = MemSetting('settings.dtmfautorst', 'DTMF Reset Time', rs)
             mset.set_doc('Set the DTMF auto reset timer value(s).')
             dtmf_settings.append(mset)
+
             # DTMF decoding response
             rs = RadioSettingValueList(self._dtmf_resp_list,
                                        current_index=_settingsobj.
@@ -1261,6 +1293,7 @@ class TDH8(chirp_common.CloneModeRadio):
                               'DTMF Decoding Response', rs)
             mset.set_doc('Set the response when a DTMF sequence is decoded.')
             dtmf_settings.append(mset)
+
             # DTMF speed
             rs = RadioSettingValueList(self._dtmf_speed_list,
                                        current_index=_settingsobj.dtmfspeed)
@@ -1279,38 +1312,38 @@ class TDH8(chirp_common.CloneModeRadio):
 
     def get_settings_button(self, btn_settings, btn_mem):
         """programable button settings"""
-        # pf1
-        # short press
+        # PF1 short press
         rs = RadioSettingValueList(self._short_press_list,
                                    current_index=btn_mem.ssidekey1)
         mset = MemSetting('button.ssidekey1', 'PF1 - Short Press', rs)
         mset.set_doc('Select the action when the PF1 button is Short pressed.')
         btn_settings.append(mset)
-        # long press
+
+        # PF1 long press
         rs = RadioSettingValueList(self._long_press_list,
                                    current_index=btn_mem.lsidekey1)
         mset = MemSetting('button.lsidekey1', 'PF1 - Long Press', rs)
         mset.set_doc('Select the action when the PF1 button is Long pressed.')
         btn_settings.append(mset)
-        # pf2
+
         if self._has_pf2_button:
-            # short press
+            # PF2 short press
             rs = RadioSettingValueList(self._short_press_list,
                                        current_index=btn_mem.ssidekey2)
             mset = MemSetting('button.ssidekey2', 'PF2 - Short Press', rs)
             mset.set_doc('Select the action when the PF2 button '
                          'is Short pressed.')
             btn_settings.append(mset)
-            # long press
+            # PF2 long press
             rs = RadioSettingValueList(self._long_press_list,
                                        current_index=btn_mem.lsidekey2)
             mset = MemSetting('button.lsidekey2', 'PF2 - Long Press', rs)
             mset.set_doc('Select the action when the PF2 button '
                          'is Long pressed.')
             btn_settings.append(mset)
-        # top
+
         if self._has_top_button:
-            # short press
+            # top short press
             rs = RadioSettingValueList(self._short_press_list,
                                        current_index=btn_mem.stopkey1)
             mset = MemSetting('button.stopkey1', 'Top Button - Short Press',
@@ -1318,7 +1351,8 @@ class TDH8(chirp_common.CloneModeRadio):
             mset.set_doc('Select the action when the Top button is '
                          'Short pressed.')
             btn_settings.append(mset)
-            # long press
+
+            # top long press
             rs = RadioSettingValueList(self._long_press_list,
                                        current_index=btn_mem.ltopkey1)
             mset = MemSetting('button.ltopkey1', 'Top Button - Long Press',
@@ -1332,18 +1366,21 @@ class TDH8(chirp_common.CloneModeRadio):
         # vfo a sub menu
         achan = RadioSettingSubGroup('achan', 'VFO A Channel')
         ab_settings.append(achan)
+
         # a work mode
         rs = RadioSettingValueList(self._vfo_workmode_list,
                                    current_index=settings_mem.aworkmode)
         mset = MemSetting('settings.aworkmode', 'Work Mode', rs)
         mset.set_doc('Set the VFO A channel Work Mode.')
         achan.append(mset)
+
         # a tuning step
         rs = RadioSettingValueList(self._step_list,
                                    current_index=settings_mem.astep)
         mset = MemSetting('settings.astep', 'Tuning Step', rs)
         mset.set_doc('Set the VFO A Tuning Step.')
         achan.append(mset)
+
         # a def channel
         if self._has_def_chan:
             rs = RadioSettingValueInteger(1,
@@ -1352,21 +1389,25 @@ class TDH8(chirp_common.CloneModeRadio):
             mset = MemSetting('settings.adefchan', 'Default Channel', rs)
             mset.set_doc('Set the default A Channel Number.')
             achan.append(mset)
+
         # vfo b sub menu
         bchan = RadioSettingSubGroup('bchan', 'VFO B Channel')
         ab_settings.append(bchan)
+
         # b work mode
         rs = RadioSettingValueList(self._vfo_workmode_list,
                                    current_index=settings_mem.bworkmode)
         mset = MemSetting('settings.bworkmode', 'Work Mode', rs)
         mset.set_doc('Set the VFO B channel Work Mode.')
         bchan.append(mset)
+
         # b tuning step
         rs = RadioSettingValueList(self._step_list,
                                    current_index=settings_mem.bstep)
         mset = MemSetting('settings.bstep', 'Tuning Step', rs)
         mset.set_doc('Set the VFO B Tuning Step.')
         bchan.append(mset)
+
         # b def channel
         if self._has_def_chan:
             rs = RadioSettingValueInteger(1,
@@ -1388,6 +1429,7 @@ class TDH8(chirp_common.CloneModeRadio):
         # radio operating mode
         self._ham = self._memobj.settings.mode == 2
         self._gmrs = self._memobj.settings.mode == 1
+
         rs = RadioSettingValueList(self._operating_mode_list,
                                    current_index=settings_mem.mode)
         mset = MemSetting('settings.mode', 'Operating Mode', rs)
@@ -1408,20 +1450,24 @@ class TDH8(chirp_common.CloneModeRadio):
             'DO NOT attempt to edit any settings until uploading to and '
             'downloading from the radio with the new operating MODE.'))
         spec_settings.append(mset)
+
         # Bluetooth settings
         if self._has_bluetooth:
             self.get_settings_bluetooth(spec_settings, self._memobj.bluetooth)
+
         # dual watch mode
         rs = RadioSettingValueInvertedBoolean(not settings_mem.dualwatch)
         mset = MemSetting('settings.dualwatch', 'Dual Watch', rs)
         mset.set_doc('Set to put the radio in dual watch (aka \'SYNC\') mode.')
         spec_settings.append(mset)
+
         # mic gain
         rs = RadioSettingValueList(self._micgain_list,
                                    current_index=self._memobj.mic.gain)
         mset = MemSetting('mic.gain', 'Mic Gain', rs)
         mset.set_doc('Set the microphone gain level.')
         spec_settings.append(mset)
+
         # brightness
         if self._has_brightness:
             if settings_mem.brightness not in range(0, 5):
@@ -1434,43 +1480,52 @@ class TDH8(chirp_common.CloneModeRadio):
             mset = MemSetting('settings.brightness', 'Brightness', rs)
             mset.set_doc('Set the radio display brightness.')
             spec_settings.append(mset)
+
         # breath LED
         rs = RadioSettingValueList(self._breath_led_list,
                                    current_index=settings_mem.breathled)
         mset = MemSetting('settings.breathled', 'Breath LED', rs)
         mset.set_doc('Set the Breath LED timing behavior.')
         spec_settings.append(mset)
+
         # poweron message
         rs = RadioSettingValueList(self._ponmsg_list,
                                    current_index=settings_mem.ponmsg)
         mset = MemSetting('settings.ponmsg', 'Power-On Message', rs)
         mset.set_doc('Set what type of power-on message will be displayed.')
         spec_settings.append(mset)
+
         # power-on message text
         self.get_settings_pom(spec_settings, self._memobj.poweron_msg)
+
         # kill/stun
         if self._has_killcode:
             rs = RadioSettingValueBoolean(settings_mem.kill)
             mset = MemSetting('settings.kill', 'Kill', rs)
             mset.set_doc('Clear to remove the radio from the \'Kill\' State.')
             spec_settings.append(mset)
+
         if self._has_stuncode:
             rs = RadioSettingValueBoolean(settings_mem.stun)
             mset = MemSetting('settings.stun', 'Stun', rs)
             mset.set_doc('Clear to remove the radio from the \'Stun\' State.')
             spec_settings.append(mset)
+
         # Button settings
         self.get_settings_button(spec_settings, self._memobj.button)
+
         # DTMF Settings
         if self._has_dtmf:
             _dtmf_mem = self._memobj.dtmf
             dtmf = RadioSettingGroup('dtmf', 'DTMF')
             self.get_settings_dtmf(dtmf, _dtmf_mem)
             spec_settings.append(dtmf)
+
         # A/B Chan
         abchan = RadioSettingGroup('abchan', 'VFO A/B Channel')
         self.get_settings_ab(abchan,  settings_mem)
         spec_settings.append(abchan)
+
         # FM broadcast Settings
         fmb = RadioSettingGroup('fmb', 'FM Broadcast')
         self.get_settings_fmb(fmb, settings_mem)
@@ -1489,36 +1544,37 @@ class TDH8(chirp_common.CloneModeRadio):
         """Power-On Message Text Settings"""
         # power-on message text
         # msg 1
-        rs = RadioSettingValueString(0, 16,
-                                     self._filter(pom_mem.msg1))
+        rs = RadioSettingValueString(0, 16, self._filter(pom_mem.msg1))
         mset = MemSetting('poweron_msg.msg1', 'Power-On Message 1', rs)
         mset.set_doc('Set the radio power-on message text for Line 1.')
         pom_settings.append(mset)
+
         # msg 2
-        rs = RadioSettingValueString(0, 16,
-                                     self._filter(pom_mem.msg2))
+        rs = RadioSettingValueString(0, 16, self._filter(pom_mem.msg2))
         mset = MemSetting('poweron_msg.msg2', 'Power-On Message 2', rs)
         mset.set_doc('Set the radio power-on message text for Line 2.')
         pom_settings.append(mset)
+
         # msg 3
-        rs = RadioSettingValueString(0, 16,
-                                     self._filter(pom_mem.msg3))
+        rs = RadioSettingValueString(0, 16, self._filter(pom_mem.msg3))
         mset = MemSetting('poweron_msg.msg3', 'Power-On Message 3', rs)
         mset.set_doc('Set the radio power-on message text for Line 3.')
         pom_settings.append(mset)
 
     def get_settings(self):
         _settings_mem = self._memobj.settings
-
         supported = []
+
         # Basic Settings
         basic = RadioSettingGroup('basic', 'Basic Settings')
         self.get_settings_basic(basic, _settings_mem)
         supported.append(basic)
+
         # Scan Settings
         scan = RadioSettingGroup('scan', 'Scan')
         self.get_settings_scan(scan, _settings_mem)
         supported.append(scan)
+
         # model specfic
         spec = RadioSettingGroup('spec', self.MODEL + ' ' + self.VARIANT +
                                  ' Specific')
@@ -2584,42 +2640,50 @@ class RT730(TDH8):
         mset.set_doc('Set to put the radio in dual watch '
                      '(aka \'Double RX\') mode.')
         spec_settings.append(mset)
+
         # power-on message text
         _pom_mem = self._memobj.poweron_msg
         TDH8.get_settings_pom(self, spec_settings, self._memobj.poweron_msg)
+
         # add msg 4 for rt-730
-        rs = RadioSettingValueString(0, 16,
-                                     self._filter(_pom_mem.msg4))
+        rs = RadioSettingValueString(0, 16, self._filter(_pom_mem.msg4))
         mset = MemSetting('poweron_msg.msg4', 'Power-On Message 4', rs)
         mset.set_doc('Set the radio power-on message text for Line 4.')
         spec_settings.append(mset)
+
         # batt save
         rs = RadioSettingValueBoolean(settings_mem.save)
         mset = MemSetting('settings.save', 'Battery Save', rs)
         mset.set_doc('Set to enable battery save mode.')
         spec_settings.append(mset)
+
         # chan names
         rs = RadioSettingValueBoolean(settings_mem.mdfa)
         mset = MemSetting('settings.mdfa', 'Channel Names', rs)
         mset.set_doc('Set to display channel names.')
         spec_settings.append(mset)
+
         # hop type
         rs = RadioSettingValueList(self._hop_list,
                                    current_index=settings_mem.hoptype)
         mset = MemSetting('settings.hoptype', 'Hop Type', rs)
         mset.set_doc('Set the frequency Hop Type.')
         spec_settings.append(mset)
+
         # qt/dqt tail clean
         rs = RadioSettingValueBoolean(settings_mem.tailclean)
         mset = MemSetting('settings.tailclean', 'QT/DQT Tail Clean', rs)
         mset.set_doc('Set to enable Tail Clean mode.')
         spec_settings.append(mset)
+
         # button settings
         self.get_settings_button(spec_settings, self._memobj.button)
+
         # A/B Chan
         abchan = RadioSettingGroup('abchan', 'VFO A/B Channel')
         self.get_settings_ab(abchan,  settings_mem)
         spec_settings.append(abchan)
+
         # fm broadcast Settings
         fmb = RadioSettingGroup('fmb', 'FM Broadcast')
         self.get_settings_fmb(fmb, settings_mem)
