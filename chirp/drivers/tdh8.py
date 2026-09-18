@@ -327,7 +327,7 @@ class TDH8(chirp_common.CloneModeRadio):
                       ('A', 0x0a), ('B', 0x0b), ('C', 0x0c), ('D', 0x0d)]
     # one-based map of FM broadcast channels
     _fmchannels_map = [(str(x), x) for x in
-                       range(1, _mem_params.get('fmb_channels') + 1)]
+                       range(1, _mem_params['fmb_channels'] + 1)]
     _lang_map = [('Chinese', 1), ('English', 3)]
     # lists for settings
     _operating_mode_list = ['NORMAL', 'GMRS', 'HAM']
@@ -611,7 +611,7 @@ class TDH8(chirp_common.CloneModeRadio):
         rf.has_tuning_step = False
         rf.has_ctone = True
         rf.can_odd_split = True
-        rf.valid_name_length = self._mem_params.get('name_len')
+        rf.valid_name_length = self._mem_params['name_len']
         rf.valid_characters = self._valid_chars
         rf.valid_skips = ['', 'S']
         rf.valid_tmodes = ['', 'Tone', 'TSQL', 'DTCS', 'Cross']
@@ -630,7 +630,7 @@ class TDH8(chirp_common.CloneModeRadio):
 
         rf.valid_bands = self._txbands + self._rxbands
         rf.valid_bands.sort()
-        rf.memory_bounds = (1, self._mem_params.get('channels') - 1)
+        rf.memory_bounds = (1, self._mem_params['channels'] - 1)
         rf.valid_special_chans = self._special_channels
         rf.has_sub_devices = True  # FM broadcast radio
         return rf
@@ -668,14 +668,17 @@ class TDH8(chirp_common.CloneModeRadio):
         """Display raw channel, name and flag data from the radio image"""
         if isinstance(number, str):
             _vfo_idx = self._special_channels.index(number)
-            return repr(self._memobj.vfo[_vfo_idx]) + \
+            return (
+                repr(self._memobj.vfo[_vfo_idx]) +
                 repr(self._memobj.vfo_offsets[_vfo_idx])
+            )
         else:
-            return repr(self._memobj.memory[number]) + \
-                repr(self._memobj.names[number - 1]) + \
-                    repr(self._memobj.scanadd[number - 1]) + \
-                        repr(self._memobj.channelflags.
-                            used[number - 1])
+            return (
+                repr(self._memobj.memory[number]) +
+                repr(self._memobj.names[number - 1]) +
+                repr(self._memobj.scanadd[number - 1]) +
+                repr(self._memobj.channelflags.used[number - 1])
+            )
 
     def _decode_tone(self, val):
         """decode CTCSS/DTCS values from the radio image"""
@@ -908,9 +911,8 @@ class TDH8(chirp_common.CloneModeRadio):
 
         # name
         if not _is_vfo:
-            _name_len = self._mem_params.get('name_len')
-            _name.name = \
-                mem.name[:_name_len].ljust(_name_len, '\x00')
+            _name_len = self._mem_params['name_len']
+            _name.name = mem.name[:_name_len].ljust(_name_len, '\x00')
 
         # tone
         txtone, rxtone = chirp_common.split_tone_encode(mem)
@@ -1150,7 +1152,7 @@ class TDH8(chirp_common.CloneModeRadio):
         dtmf_settings.append(rset)
         if self._has_stored_dtmf:
             # Stored DTMF Codes
-            for i in range(0, self._mem_params.get('dtmf_strings')):
+            for i in range(0, self._mem_params['dtmf_strings']):
                 _codeobj = dtmf_mem[i].code
                 _code = self.decode_dtmf(_codeobj, self._has_dtmf_len)
                 rs = RadioSettingValueString(0,
@@ -1169,7 +1171,7 @@ class TDH8(chirp_common.CloneModeRadio):
         # PTT-ID BOT
         _codeobj = self._memobj.pttid.bot.code
         _code = self.decode_dtmf(_codeobj, True)
-        rs = RadioSettingValueString(0, self._mem_params.get('dtmf_len') - 1,
+        rs = RadioSettingValueString(0, self._mem_params['dtmf_len'] - 1,
                                      _code, True)
         rs.set_charset(DTMF_CHARS)
         rset = RadioSetting('pttid.bot.code',
@@ -1181,7 +1183,7 @@ class TDH8(chirp_common.CloneModeRadio):
         # PTT-ID EOT
         _codeobj = self._memobj.pttid.eot.code
         _code = self.decode_dtmf(_codeobj, True)
-        rs = RadioSettingValueString(0, self._mem_params.get('dtmf_len') - 1,
+        rs = RadioSettingValueString(0, self._mem_params['dtmf_len'] - 1,
                                      _code, True)
         rs.set_charset(DTMF_CHARS)
         rset = RadioSetting('pttid.eot.code',
@@ -1195,7 +1197,7 @@ class TDH8(chirp_common.CloneModeRadio):
             _codeobj = self._memobj.remote.stun.code
             _code = _code = self.decode_dtmf(_codeobj, True)
             rs = RadioSettingValueString(0,
-                                         self._mem_params.get('dtmf_len') - 1,
+                                         self._mem_params['dtmf_len'] - 1,
                                          _code, True)
             rs.set_charset(DTMF_CHARS)
             rset = RadioSetting('remote.stun.code',
@@ -1210,7 +1212,7 @@ class TDH8(chirp_common.CloneModeRadio):
             _codeobj = self._memobj.remote.kill.code
             _code = _code = self.decode_dtmf(_codeobj, True)
             rs = RadioSettingValueString(0,
-                                         self._mem_params.get('dtmf_len') - 1,
+                                         self._mem_params['dtmf_len'] - 1,
                                          _code, True)
             rs.set_charset(DTMF_CHARS)
             rset = RadioSetting('remote.kill.code',
@@ -1332,7 +1334,7 @@ class TDH8(chirp_common.CloneModeRadio):
         # a def channel
         if self._has_def_chan:
             rs = RadioSettingValueInteger(1,
-                                          self._mem_params.get('channels') - 1,
+                                          self._mem_params['channels'] - 1,
                                           settings_mem.adefchan)
             mset = MemSetting('settings.adefchan', 'Default Channel', rs)
             mset.set_doc('Set the default A Channel Number.')
@@ -1355,7 +1357,7 @@ class TDH8(chirp_common.CloneModeRadio):
         # b def channel
         if self._has_def_chan:
             rs = RadioSettingValueInteger(1,
-                                          self._mem_params.get('channels') - 1,
+                                          self._mem_params['channels'] - 1,
                                           settings_mem.bdefchan)
             mset = MemSetting('settings.bdefchan', 'Default Channel', rs)
             mset.set_doc('Set the default B Channel Number.')
@@ -1547,7 +1549,7 @@ class TDH8FM(TDH8):
     def get_features(self):
         rf = chirp_common.RadioFeatures()
         rf.valid_bands = self._fmband
-        rf.memory_bounds = (1, self._mem_params.get('fmb_channels'))
+        rf.memory_bounds = (1, self._mem_params['fmb_channels'])
         rf.can_delete = True
         rf.can_odd_split = False
         rf.has_bank = False
