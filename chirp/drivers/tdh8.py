@@ -496,73 +496,91 @@ class TDH8(chirp_common.CloneModeRadio):
     // Memory channels
     #seekto 0x0008;
     struct memory_obj memory[%(channels)i];
+
     // Settings
     #seekto 0x0ca8;
     struct settings_obj settings;
+
     // freq offset for vfo a & b
     #seekto 0x0cb8;
     struct offset_obj vfo_offsets[2];
+
     // FM broadcast channels
     #seekto 0x0cd8;
     struct fmb_obj fmb[%(fmb_channels)i];
+
     // channel names
     #seekto 0x0d48;
     struct name_obj names[%(channels)i];
+
     // channel used flags
     #seekto 0x1a08;
     struct {
       lbit used[%(channels)i];
     } channelflags;
+
     // scan add list
     #seekto 0x1a28;
     lbit scanadd[%(channels)i];
+
     // fmb vfo
     #seekto 0x1b38;
     struct fmb_obj fmbvfo;
+
     // vfo a & b
     #seekto 0x1b58;
     struct memory_obj vfo[2];
+
     // fmb used flags
     #seekto 0x1b78;
     struct {
       lbit used[32];
-      } fmbflags;
+    } fmbflags;
+
     // power on message
     #seekto 0x1c08;
     struct poweron_msg_obj poweron_msg;
+
     // programmable buttons
     #seekto 0x1cc8;
     struct button_obj button;
+
     // id code
     #seekto 0x1e28;
     struct {
       u8 code[3];
     } id;
+
     // DTMF strings
     #seekto 0x1e38;
     struct dtmf_obj dtmf[%(dtmf_strings)i];
+
     // Group Code
     #seekto 0x1e31;
     struct {
         u8 code;
     } group;
+
     // PTT ID Code
     #seekto 0x1ec8;
     struct {
         struct dtmf_obj bot;
         struct dtmf_obj eot;
     } pttid;
+
     // Repeater ste & ttd
     #seekto 0x1f0a;
     struct {
       u8 ste; // repeater squelch tail elimination
       u8 ttd; // repeater tail tone delay
     } repeater;
+
     // mic gain
     #seekto 0x1f28;
     struct {
       u8 gain;
     } mic;
+
     // bluetooth
     #seekto 0x1f38;
     struct {
@@ -1849,74 +1867,92 @@ class TDH3(TDH8):
     // Memory channels
     #seekto 0x0008;
     struct memory_obj memory[%(channels)i];
+
     // programmable buttons
     #seekto 0x0c98;
     struct button_obj button;
+
     // Settings
     #seekto 0x0ca0;
     struct settings_obj settings;
+
     // freq offset for vfo a & b
     #seekto 0x0cb8;
     struct offset_obj vfo_offsets[2];
+
     // FM broadcast channels
     #seekto 0x0cd8;
     struct fmb_obj fmb[%(fmb_channels)i];
+
     // channel names
     #seekto 0x0d48;
     struct name_obj names[%(channels)i];
+
     // Remote Stun & Kill Codes
     #seekto 0x1808;
     struct {
       struct dtmf_obj stun;
       struct dtmf_obj kill;
     } remote;
+
     // id code
     #seekto 0x1828;
     struct {
       u8 code[3];
     } id;
+
     // Group Code
     #seekto 0x1831;
     struct {
       u8 code;
     } group;
+
     // DTMF strings
     #seekto 0x1838;
     struct dtmf_obj dtmf[%(dtmf_strings)i];
+
     // PTT ID Code
     #seekto 0x18c8;
     struct {
       struct dtmf_obj bot;
       struct dtmf_obj eot;
     } pttid;
+
     // channel used flags
     #seekto 0x1908;
     struct {
       lbit used[%(channels)i];
     } channelflags;
+
     // scanadd
     #seekto 0x1928;
     lbit scanadd[%(channels)i];
+
     // fmb used flags
     #seekto 0x1948;
     struct {
       lbit used[32];
-      } fmbflags;
+    } fmbflags;
+
     // vfo a & b
     #seekto 0x1958;
     struct memory_obj vfo[2];
+
     // fmb vfo
     #seekto 0x1978;
     struct fmb_obj fmbvfo;
+
     // power on message
     #seekto 0x1c08;
     struct poweron_msg_obj poweron_msg;
+
     // Repeater ste & ttd
     #seekto 0x1f0a;
     struct {
       u8 ste; // repeater squelch tail elimination
       u8 ttd; // repeater tail tone delay
     } repeater;
+
     // mic gain
     #seekto 0x1f28;
     struct {
@@ -2086,6 +2122,7 @@ class TDH3_Plus(TDH3):
       u8 unused0:7,
         on:1;
     } bluetooth;
+
     // H3 Plus, H9 radio menu items
     #seekto 0x1f30;
     struct {
@@ -2099,6 +2136,7 @@ class TDH3_Plus(TDH3):
       ul16 ranger_low;  // 0x1f35 H3+, H9 freq ranger low limit
       u8 hangtime;  // 0x1f37 H9, H3+ scan hangtime
     } menu;
+
     // SMS
     #seekto 0x3010;
     struct {
@@ -2254,6 +2292,7 @@ class TDH9(TDH3_Plus):
       u8 unknown1[0x0b];
       u8 type[1]; // 0x307a GNSS type index
     } gnss;
+
     // H9 APRS
     #seekto 0x307c;
     struct { // APRS config data, 0x98 bytes
@@ -2487,43 +2526,54 @@ class RT730(TDH8):
     // Memory channels
     #seekto 0x0008;
     struct memory_obj memory[%(channels)i];
+
     // buttons
     #seekto 0x0c98;
     struct button_obj button;
+
     // Settings
     #seekto 0x0ca8;
     struct settings_obj settings;
+
     // freq offset for vfo a & b
     #seekto 0x0cb8;
     struct offset_obj vfo_offsets[2];
+
     // FM broadcast channels
     #seekto 0x0cd8;
     struct fmb_obj fmb[%(fmb_channels)i];
+
     // channel names
     #seekto 0x0d48;
     struct name_obj names[%(channels)i];
+
     // power on message
     #seekto 0x1398;
     struct poweron_msg2_obj poweron_msg;
+
     // channel used flags
     #seekto 0x1a08;
     struct{
       lbit used[%(channels)i];
     } channelflags;
+
     // scan add list
     #seekto 0x1a28;
     lbit scanadd[%(channels)i];
+
     // fmb vfo
     #seekto 0x1b38;
     struct fmb_obj fmbvfo;
+
     // vfo a & b
     #seekto 0x1b58;
     struct memory_obj vfo[2];
+
     // fmb used flags
     #seekto 0x1b78;
     struct {
       lbit used[32];
-      } fmbflags;
+    } fmbflags;
     """
 
     def get_features(self):
