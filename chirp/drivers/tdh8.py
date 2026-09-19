@@ -2079,10 +2079,20 @@ class TDH3_Plus(TDH3):
 
     _end_fromat = """
     // bluetooth
-    #seekto 0x1f29;
+    #seekto 0x1f28;
     struct {
-      u8 unused0:7,
+      u8 unused1;
+      u8 unused2:7,
         on:1;
+      u8 unused3:7,
+        mode:1;   // Receiver, Emitter
+      u8 mic_gain;
+      u8 speaker_gain;
+      u8 unused5:7,
+        od_ptt:1;  // OD, OD+Analog
+      u8 unused7:6,
+        od_mode:2;  // Local Mode, Forward Mode, Full Mode
+      u8 unused8;
     } bluetooth;
     // H3 Plus, H9 radio menu items
     #seekto 0x1f30;
@@ -2140,6 +2150,47 @@ class TDH3_Plus(TDH3):
                          (filename, (f.tell() - 1)))
         else:
             chirp_common.CloneModeRadio.save_mmap(self, filename)
+
+    def get_settings_bluetooth(self, bt_settings, bt_mem):
+        super().get_settings_bluetooth(bt_settings, bt_mem)
+
+        mset = MemSetting(
+            "bluetooth.mode", "Bluetooth Mode",
+            RadioSettingValueList(
+                ["Receiver", "Emitter"], current_index=bt_mem.mode))
+        mset.set_doc("Set the bluetooth mode")
+        bt_settings.append(mset)
+
+        mset = MemSetting(
+            "bluetooth.mic_gain", "BT Mic Gain",
+            RadioSettingValueList(
+                [f"Gain Level {i}" for i in range(1, 6)],
+                current_index=bt_mem.mic_gain))
+        mset.set_doc("Set the bluetooth microphone gain")
+        bt_settings.append(mset)
+
+        mset = MemSetting(
+            "bluetooth.speaker_gain", "BT Speaker Gain",
+            RadioSettingValueList(
+                [f"Gain Level {i}" for i in range(1, 6)],
+                current_index=bt_mem.speaker_gain))
+        mset.set_doc("Set the bluetooth speaker gain")
+        bt_settings.append(mset)
+
+        mset = MemSetting(
+            "bluetooth.od_ptt", "OD PTT Mode",
+            RadioSettingValueList(
+                ["OD", "OD+Analog"], current_index=bt_mem.od_ptt))
+        mset.set_doc("Set the behavior of the PTT button with ODMaster")
+        bt_settings.append(mset)
+
+        mset = MemSetting(
+            "bluetooth.od_mode", "OD Mode",
+            RadioSettingValueList(
+                ["Local Mode", "Forward Mode", "Full Mode"],
+                current_index=bt_mem.od_mode))
+        mset.set_doc("Set the ODMaster mode")
+        bt_settings.append(mset)
 
     @classmethod
     def match_model(cls, filedata, filename):
