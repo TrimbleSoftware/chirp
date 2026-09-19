@@ -2141,6 +2141,21 @@ class TDH3_Plus(TDH3):
         else:
             chirp_common.CloneModeRadio.save_mmap(self, filename)
 
+    def get_settings_spec(self, spec_settings, settings_mem):
+        super().get_settings_spec(spec_settings, settings_mem)
+
+        mem = self._memobj
+
+        mset = MemSetting("menu.color", "Menu Color", RadioSettingValueList(
+            self._menucolor_list, current_index=mem.menu.color))
+        mset.set_doc("Choose the background color of the menu")
+        spec_settings.append(mset)
+
+        mset = MemSetting("menu.display", "Display", RadioSettingValueList(
+            self._display_list, current_index=mem.menu.display))
+        mset.set_doc("Set the display mode")
+        spec_settings.append(mset)
+
     @classmethod
     def match_model(cls, filedata, filename):
         if filename.lower().endswith('.td') and \
