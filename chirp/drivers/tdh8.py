@@ -1,6 +1,6 @@
 # Copyright 2026 Fred Trimble <chirpdriver@gmail.com>
 # CHIRP driver for the TIDRADIO TD-H8 Gen 2, 3 & 4, TD-H3 & Plus
-# and TD-H9 radios
+# and TD-H9  and Radtel RT-730 handheld radios
 #
 # This is a complete rewrite of the original tdh8.py to make it more
 # maintainable and to support the newer radios. It is based on the
@@ -19,7 +19,6 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
-from collections import defaultdict
 
 from chirp import (
     bitwise,
@@ -29,7 +28,7 @@ from chirp import (
     directory,
     errors,
     memmap,
-    # platform,
+    platform,
     util,
 )
 
@@ -51,17 +50,17 @@ from textwrap import dedent
 
 import logging
 import struct
-# from datetime import datetime
 
 LOG = logging.getLogger(__name__)
 
 CMD_ACK = b'\x06'
 
 # magic strings used to put radio into programming mode
-TD_H8 = b'\x50\x56\x4f\x4a\x48\x1c\x14'
-TD_H3 = b'\x50\x56\x4f\x4a\x48\x5c\x14'  # used by H3, H3 Plus H8 G4 and H9
+TD_H8 = b'\x50\x56\x4f\x4a\x48\x1c\x14'  # used by TD-H8 Gen 2 and 4
+TD_H3 = b'\x50\x56\x4f\x4a\x48\x5c\x14'  # used by H3, H3 Plus and H9
 RT_730 = b'\x50\x47\x4f\x4a\x48\xc3\x44'
-TD_H8_G3 = b'PVOJH<\x14'
+TD_H8_G3 = b'\x50\x56\x4f\x4a\x48\x3c\x14'  # used by TD-H3 Gen 3
+# TD_H8_G3 = b'PVOJH<\x14'  # used by TD-H8 Gen 3
 
 TDH8_CHARSET = chirp_common.CHARSET_ALPHANUMERIC + \
     '!@#$%^&*()+-=[]:";\'<>?,./'
@@ -69,85 +68,152 @@ DTMF_CHARS = '0123456789 *#ABCD'
 GMRS_FREQS = bandplan_na.ALL_GMRS_FREQS
 
 
-def _do_status(radio, cur, max):
+def _do_status(radio, msg, cur, max):
     status = chirp_common.Status()
-    status.msg = 'Cloning %3i%%' % (round(cur / max * 100))
+    status.msg = msg + ' %3i%%' % (round(cur / max * 100))
     status.cur = cur
     status.max = max
     radio.status_fn(status)
 
 
-def _do_ident(serial, magic, secondack=True):
-    serial.timeout = 1
+def reset_serial(radio):
+    serial = radio.pipe
+    if serial.is_open:
+        serial.baudrate = radio.BAUD_RATE
+        serial.timeout = radio.TIMEOUT
 
-    LOG.info('Sending Magic: %s' % util.hexprint(magic))
-    serial.write(magic)
-    ack = serial.read(1)
+        serial.reset_input_buffer()
+        if serial.in_waiting:
+            serial.read(serial.in_waiting)  # platform independent read_all()
 
-    if not ack:
-        raise errors.RadioNoResponse()
-    if ack != CMD_ACK:
-        raise errors.RadioError('Radio refused to enter programming mode')
+        serial.reset_output_buffer()
+        serial.flush()
 
-    serial.write(b'\x02')
+        LOG.info('Reset and Flushed serial port: %s' % serial.name)
 
-    response = b''
-    for i in range(1, 9):
-        byte = serial.read(1)
-        response += byte
-        if byte == b'\xdd':
-            break
 
-    if len(response) in [8, 12]:
-        LOG.info('Valid response, got this: %s' % util.hexprint(response))
-        if len(response) == 12:
-            ident = response[0] + response[3] + response[5] + response[7:]
+def _test_magic(radio, magic, ack):
+    serial = radio.pipe
+    _rv = False
+    try:
+        _had_resp = False
+        serial.write(magic)
+        _ack = serial.read(0x01)
+        _had_resp = len(_ack) > 0
+        if _ack == ack:
+            _rv = _ack
         else:
-            ident = response
-    else:
-        # bad response
-        LOG.debug('Unexpected response, got this: %s' % util.
-                  hexprint(response))
-        raise errors.RadioError('Unexpected response from radio.')
+            _rv = False
+            if _had_resp:
+                _msg = 'Unexpected ACK response from radio'
+                LOG.error(_msg)
+    except Exception as _ex:
+        raise _ex
+    finally:
+        reset_serial(radio)
 
-    if secondack:
-        serial.write(CMD_ACK)
-        ack = serial.read(1)
-        if ack != CMD_ACK:
-            raise errors.RadioError('Radio refused clone')
-
-    return ident
+    return _rv
 
 
-def _read_block(radio, start, size):
+def _enter_programming_mode(radio, secondack=True, tries=5):
+    serial = radio.pipe
+    ident = b''
+    try:
+        for magic in radio._idents:
+            LOG.info('Trying magic value %s' % magic)
+            for _i in range(1, tries + 1):
+                reset_serial(radio)
+                if not _test_magic(radio, magic, CMD_ACK):
+                    LOG.error('Radio did not ACK magic value %s (try %d/%d)' %
+                              (magic, _i, tries))
+                    continue  # Move to next retry
+                # Magic ACK'd, request identification packet
+                reset_serial(radio)
+                serial.write(b'\x02')
+
+                resp = b''
+                for _ in range(8):
+                    _c = serial.read(0x01)
+                    resp += _c
+                    if _c == b'\xdd':
+                        break
+
+                if len(resp) not in [8, 12]:
+                    LOG.debug('Unexpected response length (%d), got: %s' %
+                              (len(resp), util.hexprint(resp)))
+                    raise errors.RadioError('Unexpected response length '
+                                            'from radio.')
+
+                LOG.info('Valid response, got this: %s' % util.hexprint(resp))
+
+                if len(resp) == 12:
+                    ident = resp[0:1] + resp[3:4] + resp[5:6] + resp[7:]
+                else:
+                    ident = resp
+
+                if secondack:
+                    reset_serial(radio)
+                    serial.write(CMD_ACK)
+                    _ack = serial.read(0x01)
+                    if _ack == CMD_ACK:
+                        LOG.info('Radio is in Program Mode now!')
+                        return magic, ident
+                    else:
+                        LOG.error('Radio did not accept Program Mode')
+            else:  # for tries
+                _msg = 'No response from radio after %d tries for '\
+                    'magic %s' % (_i, magic)
+                LOG.error(_msg)
+        else:  # for magic
+            _msg = 'No response from radio after trying all magic values.'
+            LOG.error(_msg)
+            raise errors.RadioNoResponse(_msg)
+    finally:
+        reset_serial(radio)
+
+
+def _exit_programming_mode(radio):
+    serial = radio.pipe
+    try:
+        serial.write(b'E')
+        reset_serial(radio)
+    except Exception:
+        raise
+
+
+def _read_block(radio, block_addr, size):
     serial = radio.pipe
 
-    cmd = struct.pack('>cHb', b'R', start, size)
+    cmd = struct.pack('>cHb', b'R', block_addr, size)
     expectedresponse = b'W' + cmd[1:]
 
-    try:
-        serial.write(cmd)
-        response = serial.read(5 + size)
-        if not response:
-            if start == 0:
-                raise errors.RadioNoResponse()
-            raise errors.RadioError('Failed to read block at 0x%04x' % start)
-        if response[:4] != expectedresponse:
-            raise errors.RadioError('Error reading block 0x%04x.' % (start))
-        block_data = response[4:-1]
+    serial.write(cmd)
+    response = serial.read(5 + size)
+    if not response:
+        if block_addr == 0:
+            raise errors.RadioNoResponse()
+        _msg = 'Failed to read block at 0x%04x' % block_addr
+        LOG.error(_msg)
+        raise errors.RadioError(_msg)
+    if response[:4] != expectedresponse:
+        LOG.error(_msg)
+        raise errors.RadioError(_msg)
 
-    except errors.RadioError:
-        raise
-    except Exception:
-        raise errors.RadioError('Failed to read block at 0x%04x' % start)
+    if radio._is_on_ble and not radio._needs_ble_checksum:
+        block_data = response[4:]  # strip off addr ack (no cs on some ble)
+    else:
+        block_data = response[4:-1]  # strip off addr ack and checksum
 
     return block_data
 
 
 def _do_download(radio):
     # Radio must have already been ident'd by detect_from_serial()
+    _msg = 'Downloading'
+    if radio._is_on_ble:
+        _msg += ' over BLE'
+    LOG.info(_msg + '...')
     data = radio.ident_mode
-    LOG.info('Downloading...')
 
     _max = int(radio._memsize / radio.BLOCKSIZE)  # number of blocks
     _block_num = 0
@@ -155,9 +221,9 @@ def _do_download(radio):
         radio.pipe.log('Reading from address: 0x%04x' % addr)
         block = _read_block(radio, addr, radio.BLOCKSIZE)
         data += block
-        _do_status(radio, _block_num, _max)
+        _do_status(radio, _msg, _block_num, _max)
         _block_num += 1
-    _do_status(radio, _max, _max)  # show 100%
+    _do_status(radio, 'Done', _max, _max)  # show 100%
     LOG.info('Download done!')
 
     return memmap.MemoryMapBytes(data)
@@ -172,28 +238,30 @@ def _write_block(radio, block_addr, size):
     cs = checksum.checksum_8bit(data)
     frame = cmd + data + bytes([cs])
     serial.write(frame)
+    serial.flush()
 
-    ack = serial.read(1)
+    ack = serial.read(0x01)
     if ack != CMD_ACK:
-        raise errors.RadioError('Radio refused to accept block 0x%04x' %
-                                block_addr)
-
-
-def _exit_programming_mode(radio):
-    serial = radio.pipe
-    try:
-        serial.write(b'E')
-    except Exception:
-        raise errors.RadioError('Radio refused to exit programming mode')
+        _msg = 'Radio refused to accept block 0x%04x' % block_addr
+        if platform.get_platform().is_ble_serial(radio.pipe):
+            _msg += '\nCheck the MTU of the BLE Serial connection.\n'\
+                'It must be set to at least 37 to prevent Block Write errors.'
+        LOG.error(_msg)
+        raise errors.RadioError(_msg)
 
 
 def _do_upload(radio):
-    _, data = test_idents(radio, radio.pipe)
+    TRIES = 2
+    _msg = 'Uploading'
+    if radio._is_on_ble:
+        _msg += ' over BLE'
+    # img data is always prefixed with the 8 byte radio ident value
+    data = _enter_programming_mode(radio, True, TRIES)
     if radio.ident_mode == data:
         LOG.info('Successful match during Upload.')
     else:
         LOG.error('Model mismatch during Upload!')
-    LOG.info('Uploading...')
+    LOG.info(_msg + '...')
 
     _max = int(sum(abs(x - y) for x, y in radio._ranges_main) /
                radio.BLOCKSIZE_UP)  # number of blocks
@@ -202,10 +270,10 @@ def _do_upload(radio):
         for addr in range(start_addr, end_addr, radio.BLOCKSIZE_UP):
             radio.pipe.log('Writing to address: 0x%04x' % addr)
             _write_block(radio, addr, radio.BLOCKSIZE_UP)
-            _do_status(radio, _block_num, _max)
+            _do_status(radio, _msg, _block_num, _max)
             _block_num += 1
     _exit_programming_mode(radio)
-    _do_status(radio, _max, _max)  # show 100%
+    _do_status(radio, 'Done', _max, _max)  # show 100%
     LOG.info('Upload done!')
 
 
@@ -228,33 +296,6 @@ def validate_gmrs_memory(mem):
     return msgs
 
 
-def test_idents(cls, pipe):
-    """tests a list of idents (magics) to see if the radio responds,
-    returns the class and ident (magic) of the responding device"""
-
-    # Collect all models which can respond to a particular magic sequence
-    model_by_magic = defaultdict(set)
-    for model_cls in cls.detected_models():
-        for magic in model_cls._idents:
-            model_by_magic[magic].add(model_cls)
-
-    # Test each unique magic sequence only once
-    for magic, model_classes in model_by_magic.items():
-        try:
-            response = _do_ident(pipe, magic)
-        except errors.RadioNoResponse:
-            continue
-
-        # Matching to models which share this magic code
-        for model_class in model_classes:
-            if model_class.ident_mode == response:
-                return model_class, magic
-
-        LOG.warning(f'No model match found for magic: {magic!r}')
-
-    raise errors.RadioError('Unsupported model')
-
-
 @directory.register
 class TDH8(chirp_common.CloneModeRadio):
     """TIDRADIO TD-H8 Normal"""
@@ -265,11 +306,11 @@ class TDH8(chirp_common.CloneModeRadio):
     _gmrs = False
     _ham = False
     BAUD_RATE = 38400
+    TIMEOUT = 0.5
     BLOCKSIZE = 0x20
     BLOCKSIZE_UP = 0x20
     _memsize = 0x1fef  # 0x1eef
     _ranges_main = [(0x0000, _memsize)]
-    # _mmap = bytearray(_memsize)
     _memobj = bytearray(_memsize)
     _mem_params = {
         'channels': 200,
@@ -285,6 +326,7 @@ class TDH8(chirp_common.CloneModeRadio):
     _modes = ['FM', 'NFM']  # TD-H8 Gen 1 & 2 don't have AM RX!
     _has_am = False
     _has_am_per_channel = False
+    _has_am_band = False
     _has_offsetdir = True
     _has_scramble = False
     _has_pttid = True
@@ -302,10 +344,17 @@ class TDH8(chirp_common.CloneModeRadio):
     _has_pf2_button = True
     _has_top_button = True
     _has_def_chan = True
-    _has_bluetooth = True
+    _has_simple_bluetooth = True
+    _has_bluetooth = not _has_simple_bluetooth
     _has_brightness = False
+    _has_disp_mode = False
+    _has_menu_color = False
     _has_pritx = True
     _has_spec = False
+    _has_alarm_mode = False
+    _has_xt220 = False
+    _needs_ble_checksum = True
+    _is_on_ble = False
 
     _valid_chars = TDH8_CHARSET
     _tx_power = [chirp_common.PowerLevel('Low', watts=1.00),
@@ -322,14 +371,14 @@ class TDH8(chirp_common.CloneModeRadio):
         0xff: ' ',
     }
     _inverted_dtmf_code_dict = {v: k for k, v in _dtmf_code_dict.items()}
-    # maps for settings
+    # settings maps
     _groupcode_map = [('', 0x00), ('Off', 0xff), ('*', 0x0e), ('#', 0x0f),
                       ('A', 0x0a), ('B', 0x0b), ('C', 0x0c), ('D', 0x0d)]
     # one-based map of FM broadcast channels
     _fmchannels_map = [(str(x), x) for x in
                        range(1, _mem_params.get('fmb_channels') + 1)]
     _lang_map = [('Chinese', 1), ('English', 3)]
-    # lists for settings
+    # settings lists
     _operating_mode_list = ['NORMAL', 'GMRS', 'HAM']
     _squelch_list = ['%s' % x for x in range(0, 10)]
     _step_list = ['%2.2fK' % x for x in _steps]
@@ -573,8 +622,43 @@ class TDH8(chirp_common.CloneModeRadio):
 
     @classmethod
     def detect_from_serial(cls, pipe):
-        rclass, _ = test_idents(cls, pipe)
-        return rclass
+        RETRIES = 2
+
+        # dict of magic, ident_mode to radio classes
+        model_by_rkey = {
+            (magic, model_cls.ident_mode): model_cls
+            for model_cls in cls.detected_models()
+            for magic in model_cls._idents
+        }
+
+        attempts = 0
+        # radio models to try and detect
+        models_to_try = cls.detected_models()
+
+        for model_class in models_to_try:
+            radio = model_class(pipe)
+            attempts += 1
+            try:
+                magic, ident = _enter_programming_mode(radio, True, RETRIES)
+
+                if magic and ident:
+                    match = model_by_rkey.get((magic, ident))
+                    if match is not None:
+                        return match
+                    LOG.warning('No model match found for magic: '
+                                '%s, ident: %s', (magic, ident))
+            except errors.RadioNoResponse:
+                continue
+
+        try:
+            pipe.close()
+        except Exception:
+            pass
+
+        msg = 'No response from radio after trying %d different '\
+            'radio variants.' % attempts
+        LOG.error(msg)
+        raise errors.RadioNoResponse(msg)
 
     @classmethod
     def get_prompts(cls):
@@ -645,6 +729,7 @@ class TDH8(chirp_common.CloneModeRadio):
 
     def sync_in(self):
         """Download from radio"""
+        self._is_on_ble = platform.get_platform().is_ble_serial(self.pipe)
         try:
             self._mmap = _do_download(self)
             self.process_mmap()
@@ -655,6 +740,7 @@ class TDH8(chirp_common.CloneModeRadio):
 
     def sync_out(self):
         """Upload to radio"""
+        self._is_on_ble = platform.get_platform().is_ble_serial(self.pipe)
         try:
             _do_upload(self)
         except errors.RadioError:
@@ -673,9 +759,8 @@ class TDH8(chirp_common.CloneModeRadio):
         else:
             return repr(self._memobj.memory[number]) + \
                 repr(self._memobj.names[number - 1]) + \
-                    repr(self._memobj.scanadd[number - 1]) + \
-                        repr(self._memobj.channelflags.
-                            used[number - 1])
+                repr(self._memobj.scanadd[number - 1]) + \
+                repr(self._memobj.channelflags.used[number - 1])
 
     def _decode_tone(self, val):
         """decode CTCSS/DTCS values from the radio image"""
@@ -945,12 +1030,15 @@ class TDH8(chirp_common.CloneModeRadio):
         # mem.extra
         for setting in mem.extra:
             setting.apply_to_memobj(_mem)
+            if setting.has_apply_callback():
+                # use callbacks on mem.extra
+                # Radiosettings that need postprocessing
+                setting.run_apply_callback()
 
     def decode_dtmf(self, val, len_byte=False):
         """decode the binary coded DTMF value into a DTMF string"""
         dtmf = ''
         if len_byte:
-
             if all(x == 0xff for x in val):
                 return ' ' * (len(val) - 1)
 
@@ -1064,6 +1152,13 @@ class TDH8(chirp_common.CloneModeRadio):
         basic_settings.append(mset)
         # roger beep
         self.get_settings_roger(basic_settings, settings_mem)
+        # alarm mode
+        if self._has_alarm_mode:
+            rs = RadioSettingValueList(self._alarm_list,
+                                       current_index=settings_mem.alarm)
+            mset = MemSetting('settings.alarm', 'Alarm Mode', rs)
+            mset.set_doc('Select the radio\'s Alarm Mode')
+            basic_settings.append(mset)
         # language
         _lang_mem = self._memobj.menu.lang if hasattr(self._memobj, 'menu') \
             else self._memobj.settings.lang
@@ -1394,8 +1489,14 @@ class TDH8(chirp_common.CloneModeRadio):
             'downloading from the radio with the new operating MODE.'))
         spec_settings.append(mset)
         # Bluetooth settings
-        if self._has_bluetooth:
+        if self._has_simple_bluetooth:
             self.get_settings_bluetooth(spec_settings, self._memobj.bluetooth)
+        # AM band
+        if self._has_am_band:
+            rs = RadioSettingValueBoolean(settings_mem.amband)
+            mset = MemSetting('settings.amband', 'AM Band', rs)
+            mset.set_doc('Set to enable AM airband RX')
+            spec_settings.append(mset)
         # dual watch mode
         rs = RadioSettingValueInvertedBoolean(not settings_mem.dualwatch)
         mset = MemSetting('settings.dualwatch', 'Dual Watch', rs)
@@ -1407,6 +1508,21 @@ class TDH8(chirp_common.CloneModeRadio):
         mset = MemSetting('mic.gain', 'Mic Gain', rs)
         mset.set_doc('Set the microphone gain level.')
         spec_settings.append(mset)
+        # display mode
+        if self._has_disp_mode:
+            _menu = self._memobj.menu
+            rs = RadioSettingValueList(self._display_list,
+                                       current_index=_menu.display)
+            mset = MemSetting('menu.display', 'Display Mode', rs)
+            mset.set_doc('Select the radio display mode')
+            spec_settings.append(mset)
+        # menu color
+        if self._has_menu_color:
+            rs = RadioSettingValueList(self._menucolor_list,
+                                       current_index=_menu.color)
+            mset = MemSetting('menu.color', 'Menu Color', rs)
+            mset.set_doc("Select radio menu text background color")
+            spec_settings.append(mset)
         # brightness
         if self._has_brightness:
             if settings_mem.brightness not in range(0, 5):
@@ -1446,6 +1562,22 @@ class TDH8(chirp_common.CloneModeRadio):
             spec_settings.append(mset)
         # Button settings
         self.get_settings_button(spec_settings, self._memobj.button)
+        # tx200
+        if self._has_xt220:
+            rs = RadioSettingValueBoolean(settings_mem.tx200)
+            mset = MemSetting('settings.tx200', '200 TX', rs)
+            mset.set_doc('Set to allow TX on 200 Mhz band')
+            spec_settings.append(mset)
+        # tx350
+            rs = RadioSettingValueBoolean(settings_mem.tx350)
+            mset = MemSetting('settings.tx350', '350 TX', rs)
+            mset.set_doc('Set to allow TX on 350 Mhz band')
+            spec_settings.append(mset)
+        # tx500
+            rs = RadioSettingValueBoolean(settings_mem.tx500)
+            mset = MemSetting('settings.tx500', '500 TX', rs)
+            mset.set_doc('Set to allow TX on 500 Mhz band')
+            spec_settings.append(mset)
         # DTMF Settings
         if self._has_dtmf:
             _dtmf_mem = self._memobj.dtmf
@@ -1650,7 +1782,7 @@ class TDH8_HAM(TDH8):
     _txbands = [(144000000, 149000000), (420000000, 451000000)]
     _rxbands = [(136000000, 143999000), (149000001, 174000000),
                 (400000000, 419999000), (451000001, 521000000)]
-    _tx220 = [(222000000, 225000000)]
+    _tx200 = [(222000000, 225000000)]
     # leave out 219-220 sub-band because this radio doesn't do
     # fixed digital message forwarding
     # tx350 and tx500 bands unknown; add them if you are in a
@@ -1660,8 +1792,8 @@ class TDH8_HAM(TDH8):
         _settings = self._memobj.settings
         bands = []
         bands.extend(self._txbands)
-        if _settings.tx220:
-            bands.extend(self._tx220)
+        if _settings.tx200:
+            bands.extend(self._tx200)
         return bands
 
 
@@ -1717,6 +1849,7 @@ class TDH3(TDH8):
     _modes = ['FM', 'NFM', 'AM', 'NAM']  # 25 kHz,12.5kHz, AM, NAM.
     _has_am = True
     _has_am_per_channel = False
+    _has_am_band = True
     _has_scramble = True
     _has_pttid = True
     _has_bcl = True
@@ -1730,13 +1863,16 @@ class TDH3(TDH8):
     _has_pf2_button = False
     _has_top_button = False
     _has_brightness = True
+    _has_alarm_mode = True
+    _has_xt220 = True
 
     _tx_power = [chirp_common.PowerLevel('Low', watts=2.00),
                  chirp_common.PowerLevel('High', watts=5.00),
                  ]
+    # settings maps
     _lang_map = [('Chinese', 0), ('English', 1)]
     _brightness_map = [("1", 4), ("2", 3), ("3", 2), ("4", 1), ("5", 0)]
-
+    # settings lists
     _steps = [2.5, 5.0, 6.25, 10.0, 12.5, 25.0, 50.0, 8.33]
     _step_list = ['%2.2fK' % x for x in _steps]
     _scramble_list = ['Off'] + ['%02d' % x for x in range(1, 17)]
@@ -1746,6 +1882,7 @@ class TDH3(TDH8):
     _long_press_list = _short_press_list
     _micgain_list = ['%02d' % x for x in range(0, 10)]
     _roger_list = ['Off', 'TONE1', 'TONE2']
+    _alarm_list = ['On Site', 'TX Alarm']
 
     _name_format = """
     // channel name
@@ -1817,7 +1954,7 @@ class TDH3(TDH8):
       u8 tot;
       u8 rogerprompt:2,
         unused11_4:1,
-        tx220:1,
+        tx200:1,
         tx350:1,
         tx500:1,
         lang:1,
@@ -1977,7 +2114,7 @@ class TDH3_HAM(TDH3):
     _txbands = [(144000000, 149000000), (420000000, 451000000)]
     _rxbands = [(18000000, 107999000), (108000000, 136000000),
                 (149990000, 419990000), (451000000, 600000000)]
-    _tx220 = [(222000000, 225000000)]
+    _tx200 = [(222000000, 225000000)]
     # leave out 219-220 sub-band because this radio doesn't do
     # fixed digital message forwarding
     # tx350 and tx500 bands unknown; add them if you are in a
@@ -1987,8 +2124,8 @@ class TDH3_HAM(TDH3):
         _settings = self._memobj.settings
         bands = []
         bands.extend(self._txbands)
-        if _settings.tx220:
-            bands.extend(self._tx220)
+        if _settings.tx200:
+            bands.extend(self._tx200)
         return bands
 
 
@@ -2012,16 +2149,20 @@ class TDH3_GMRS(TDH3):
 @directory.register
 class TDH3_Plus(TDH3):
     """TIDRADIO H-3 Plus Normal"""
-    # This driver is based on Version 1.0.45 firmware
+    # This driver is based on Version 1.0.50 firmware
+    # NOTICE: For uploading to an TD-H3 Plus over a BLE connection,
+    # the ble-serial MTU must be set to atleast 37 of the first block
+    # write will fail to ACK.
+    # ble-serial -d xx:xx:xx:xx:xx:xx -m 37 -vvv
+    # memory address above 0x3000 don't seem to write reliable, unless
+    # using a BLE serial connection to upload to the radio. It may have
+    #  someting to do with the serial write buffer size or device overflow
     VENDOR = 'TIDRADIO'
     MODEL = 'TD-H3-Plus'
     ident_mode = TDH3.ident_mode
     _ham = False
     _gmrs = False
-    # _memsize = 0x1fef
-    # _memsize = 0x2000
     _memsize = 0x3140
-    # _ranges_main = [(0x0000, _memsize)]
     _ranges_main = [(0x0000, 0x1f80),
                     (0x3000, 0x3140)]
     _mmap = bytearray(_memsize)
@@ -2029,16 +2170,26 @@ class TDH3_Plus(TDH3):
                                          (VENDOR, MODEL), '*.td')]
     _has_am = True
     _has_am_per_channel = True
+    _has_am_band = False
     _has_scan_hangtime = True
     _has_freq_ranger = True
     _has_pf2_button = True
     _has_top_button = False
     _has_pritx = False
+    _has_simple_bluetooth = False
+    _has_bluetooth = not _has_simple_bluetooth
+    _has_smsmode = False
+    _has_disp_mode = True
+    _has_menu_color = True
+    _has_morse = True
+
+    # settings maps
     _lang_map = [
         ('English', 0), ('中文', 1), ('Türkçe', 2), ('Pусский', 3),
         ('Deutsch', 4), ('Española', 5), ('Italiana', 6), ('Française', 7),
         ('แบบไทย', 8),
         ]
+    # settings lists
     _hangtime_list = ['%1.1fs' % (x / 2) for x in range(1, 21)]
     _rx_modulation_list = ['FM', 'AM']
     _dtmf_resp_list = ['None', 'Ring', 'Callback', 'Ring+Callback']
@@ -2062,11 +2213,21 @@ class TDH3_Plus(TDH3):
         'L. Green', 'Brown', 'Pink', 'B. Red', 'G. Blue',
         'L. Gray', 'LG. Blue', 'LB. Blue',
         ]
+    _btmode_list = ['Receiver', 'Emitter']
+    _odptt_list = ['OD', 'OD+Analog']
+    _odmode_list = ['Local Mode', 'Forward Mode', 'Full Mode']
+    _intgain_list = ['Gain Level %d' % x for x in range(1, 6)]
+
+    _morsetone_list = ['%d Hz' % x for x in [500, 600, 700, 800, 1000]]
+    _morsespeed_list = ['%d WPM' % x for x in [5, 8, 12, 18, 24]]
+    _morserxthresh_list = ['Weak', 'Med-Weak', 'Medium', 'Med-Str', 'Strong']
+
     _fmrec_shortname = 'FM Interrupt'
+
     _txbands = [(136000000, 174000000), (200000000, 600000000)]
     _rxbands = [(18000000, 600000000)]
-    _tx220 = [(220000000, 299995000)]
-    _tx350 = [(350000000, 350000000)]  # ???
+    _tx200 = [(222000000, 225000000)]
+    _tx350 = [(350000000, 351000000)]
     _tx500 = [(500000000, 520000000)]
     _mil_airband = [(220000000, 399998750)]
     _airband = TDH3._airband + _mil_airband
@@ -2081,9 +2242,15 @@ class TDH3_Plus(TDH3):
     // bluetooth
     #seekto 0x1f29;
     struct {
-      u8 unused0:7,
-        on:1;
+      u8 on;     // 0x1f29 1 byte bt on/off bool
+      u8 mode;   // 0x1f2a 1 byte bt mode idx
+      u8 micgain; // 0x1f2b 1 byte bt mic gain idx
+      u8 spkgain; // 0x1f2c 1 byte bt spk gain idx
+      u8 odptt;  // 0x1f2d 1 byte bt od ptt idx
+      u8 odmode; // 0x1f2e 1 byte od mode idx
+      u8 unknown0; // 0x1f2f ????
     } bluetooth;
+
     // H3 Plus, H9 radio menu items
     #seekto 0x1f30;
     struct {
@@ -2097,14 +2264,23 @@ class TDH3_Plus(TDH3):
       ul16 ranger_low;  // 0x1f35 H3+, H9 freq ranger low limit
       u8 hangtime;  // 0x1f37 H9, H3+ scan hangtime
     } menu;
+
     // SMS
-    #seekto 0x3010;
+    #seekto 0x301d;
     struct {
-      u8 unknown0[13];
-      u8 unknown:7, // 0x301d sms on/off
-        on:1;
-      u8 unknown1[18];
+      u8 on;       // 0x301d 1 byte sms on/off bool
+      u8 mode;     // 0x301e 1 byte sms mode idx
+      u8 rxfilter; // 0x301f 1 byte sms rx filter on/off bool
     } sms;
+
+    // Morse
+    #seekto 0x302a;
+    struct {
+      u8 tone:4, // 0x302a 4 bit morse tone idx
+        speed:3, //   3 bit morse speed idx
+        on:1;    //   1 bit morse on/off bool
+      u8 rxthresh; // 1 byte morse RX thresh idx
+    } morse;
     """
 
     def load_mmap(self, filename):
@@ -2142,6 +2318,15 @@ class TDH3_Plus(TDH3):
             chirp_common.CloneModeRadio.save_mmap(self, filename)
 
     @classmethod
+    def get_prompts(cls):
+        rp = super().get_prompts()
+        rp.info = (dedent("""\
+            To Upload to the TD-H3 Plus or TD-H9 over a ble-serial
+            connection, the ble-serial MTU must be set to at least 37.
+            Use the ble-serial -m command line option to set the MTU."""))
+        return rp
+
+    @classmethod
     def match_model(cls, filedata, filename):
         if filename.lower().endswith('.td') and \
                 filedata.startswith(cls._td_file_header):
@@ -2149,6 +2334,112 @@ class TDH3_Plus(TDH3):
             return True
         else:
             return False
+
+    def get_settings_sms(self, sms_settings, settings_mem):
+        # SMS on/off
+        rs = RadioSettingValueBoolean(settings_mem.on)
+        mset = MemSetting('sms.on', 'SMS On/Off', rs)
+        mset.set_doc('Turn the SMS function On or Off')
+        sms_settings.append(mset)
+
+        if self._has_smsmode:
+            # SMS mode
+            rs = RadioSettingValueList(self._smsmode_list,
+                                       current_index=settings_mem.mode)
+            mset = MemSetting('sms.mode', 'SMS Mode', rs)
+            mset.set_doc('Set the SMS TX/RX Mode')
+            sms_settings.append(mset)
+            # RX Filter
+            rs = RadioSettingValueBoolean(settings_mem.rxfilter)
+            mset = MemSetting('sms.rxfilter', 'RX Filter', rs)
+            mset.set_doc('Set to enable the SMS RX Filter')
+            sms_settings.append(mset)
+
+    def get_settings_morse(self, morse_settings, settings_mem):
+        # Morse on/off
+        rs = RadioSettingValueBoolean(settings_mem.on)
+        mset = MemSetting('morse.on', 'Morse On/Off', rs)
+        mset.set_doc('Turn the Morse Code function On or Off')
+        morse_settings.append(mset)
+        # TX Speed
+        rs = RadioSettingValueList(self._morsespeed_list,
+                                   current_index=settings_mem.speed)
+        mset = MemSetting('morse.speed', 'TX Speed', rs)
+        mset.set_doc('Select the Morse Code TX Speed in WPM')
+        morse_settings.append(mset)
+        # RX Thresh
+        rs = RadioSettingValueList(self._morserxthresh_list,
+                                   current_index=settings_mem.rxthresh)
+        mset = MemSetting('morse.rxthresh', 'RX Thresh', rs)
+        mset.set_doc('Select the Morse Code RX sensitivity threshold')
+        morse_settings.append(mset)
+        # Tone Hz
+        rs = RadioSettingValueList(self._morsetone_list,
+                                   current_index=settings_mem.tone)
+        mset = MemSetting('morse.tone', 'Tone Hz', rs)
+        mset.set_doc('Select the audible Tone to use with Morse Code')
+        morse_settings.append(mset)
+
+    def get_settings_bluetooth(self, bt_settings, settings_mem):
+        # bluetooth on/off
+        rs = RadioSettingValueBoolean(settings_mem.on)
+        mset = MemSetting('bluetooth.on', 'BT On/Off', rs)
+        mset.set_doc('Set the Bluetooth extended connectivity On/Off.')
+        bt_settings.append(mset)
+        # BT mode
+        rs = RadioSettingValueList(self._btmode_list,
+                                   current_index=settings_mem.mode)
+        mset = MemSetting('bluetooth.mode', 'BT Mode', rs)
+        mset.set_doc('Select the Bluetooth operation Mode')
+        bt_settings.append(mset)
+        # OD PTT
+        rs = RadioSettingValueList(self._odptt_list,
+                                   current_index=settings_mem.odptt)
+        mset = MemSetting('bluetooth.odptt', 'OD PTT', rs)
+        mset.set_doc('Select the Bluetooth OD PTT operation')
+        bt_settings.append(mset)
+        # OD mode
+        rs = RadioSettingValueList(self._odmode_list,
+                                   current_index=settings_mem.odmode)
+        mset = MemSetting('bluetooth.odmode', 'OD Mode', rs)
+        mset.set_doc('Select the Bluetooth OD Mode')
+        bt_settings.append(mset)
+        # BT Int Mic
+        # BT Int Spk
+        # BT Mic gain
+        rs = RadioSettingValueList(self._intgain_list,
+                                   current_index=settings_mem.micgain)
+        mset = MemSetting('bluetooth.micgain', 'BT Mic Gain', rs)
+        mset.set_doc('Select the internal Bluetooth Mic Gain')
+        bt_settings.append(mset)
+        # BT Spk gain
+        rs = RadioSettingValueList(self._intgain_list,
+                                   current_index=settings_mem.spkgain)
+        mset = MemSetting('bluetooth.spkgain', 'BT Spk Gain', rs)
+        mset.set_doc('Select the internal Bluetooth Speaker Gain')
+        bt_settings.append(mset)
+
+    def get_settings_spec(self, spec_settings, settings_mem):
+        super().get_settings_spec(spec_settings, settings_mem)
+        # display mode
+
+        # Bluetooth
+        if self._has_bluetooth:
+            settings_mem = self._memobj.bluetooth
+            bt = RadioSettingGroup('bt', 'Bluetooth')
+            self.get_settings_bluetooth(bt, settings_mem)
+            spec_settings.append(bt)
+        # SMS
+        settings_mem = self._memobj.sms
+        sms = RadioSettingGroup('sms', 'SMS')
+        self.get_settings_sms(sms, settings_mem)
+        spec_settings.append(sms)
+        # Morse
+        if self._has_morse:
+            settings_mem = self._memobj.morse
+            morse = RadioSettingGroup('morse', 'Morse')
+            self.get_settings_morse(morse, settings_mem)
+            spec_settings.append(morse)
 
     def get_sub_devices(self):
         return [TDH3_PlusVhfUhf(self._mmap),
@@ -2181,7 +2472,7 @@ class TDH3_Plus_HAM(TDH3_HAM, TDH3_Plus):
     _txbands = [(144000000, 149000000), (420000000, 451000000)]
     _rxbands = [(18000000, 107999000), (108000000, 136000000),
                 (149990000, 419990000), (451000000, 600000000)]
-    _tx220 = [(222000000, 225000000)]
+    _tx200 = [(222000000, 225000000)]
     # leave out 219-220 sub-band because this radio doesn't do
     # fixed digital message forwarding
     # tx350 and tx500 bands unknown; add them if you are in a
@@ -2191,8 +2482,8 @@ class TDH3_Plus_HAM(TDH3_HAM, TDH3_Plus):
         _settings = self._memobj.settings
         bands = []
         bands.extend(self._txbands)
-        if _settings.tx220:
-            bands.extend(self._tx220)
+        if _settings.tx200:
+            bands.extend(self._tx200)
         return bands
 
 
@@ -2214,52 +2505,72 @@ class TDH3_Plus_GMRS(TDH3_GMRS, TDH3_Plus):
 @directory.register
 class TDH9(TDH3_Plus):
     """TIDRADIO H-9 Normal"""
+    # This driver is based on Version 1.0.33 firmware
+    # NOTICE: For uploading to an TD-H9 over a BLE connection,
+    # the ble-serial MTU must be set to atleast 37 of the first block
+    # write will fail to ACK.
+    # ble-serial -d xx:xx:xx:xx:xx:xx -m 37 -vvv
     VENDOR = 'TIDRADIO'
     MODEL = 'TD-H9'
     ident_mode = b'TDH9\xff\xff\xff\x4e'
     _gmrs = False
     _ham = False
-    # _memsize = 0x2000
     _memsize = 0x3140
-    # _ranges_main = [(0x0000, _memsize)]
     _ranges_main = [(0x0000, 0x1f80),
                     (0x3000, 0x3140)]
     _mmap = bytearray(_memsize)
-    _tx_power = [chirp_common.PowerLevel('Low',  watts=1.00),
-                 chirp_common.PowerLevel('Mid',  watts=5.00),
-                 chirp_common.PowerLevel('High', watts=10.00),
-                 ]
     _has_dtmf_len = False
     _has_dtmf_terminated = not _has_dtmf_len
     _has_freq_ranger = True
     _has_pf2_button = True
     _has_top_button = True
+    _has_smsmode = True
+
+    _tx_power = [chirp_common.PowerLevel('Low',  watts=1.00),
+                 chirp_common.PowerLevel('Mid',  watts=5.00),
+                 chirp_common.PowerLevel('High', watts=10.00),
+                 ]
+
+    # settings lists
     _short_press_list = ['None', 'FM Radio', 'GNSS SW', 'None', 'Tone',
                          'Alarm', 'Weather', 'PTT2', 'OD PTT',
                          ]
     _long_press_list = ['None', 'FM Radio', 'GNSS SW', 'Cancel Sq', 'Tone',
                         'Alarm', 'Weather',
                         ]
+    _gpspos_list = ['Deg', 'Deg.min', 'Deg.min.s']
+    _gpstz_list = ['UTC%+i' % x for x in range(-12, +13)]
+    _gpsspeed_list = ['Km/h', 'Knot', 'm/s']
+    _gpsdist_list = ['Km', 'Sea', 'Mile']
+    _gpsalt_list = ['M', 'Ft']
+    _smsmode_list = ['RF', 'APRS']
 
     _end_fromat = TDH3_Plus._end_fromat + """
     // H9 GNSS
     #seekto 0x3066;
-    struct { // GNSS config data, 0x15 bytes
-      u8 region[1]; // 0x3066 GNSS region index
-      u8 unknown0[0x07];
-      u8 unsed0:7,  // 0x306e
-        gps_on:1; // 1 bit GPS on/off
-      u8 unknown1[0x0b];
-      u8 type[1]; // 0x307a GNSS type index
+    struct { // GNSS config data, 0x1c bytes
+      u8 unknown0[0x08]; // 0x3066 ???
+      u8 on;       // 0x306e 1 byte GPS on/off bool
+      u8 gpspos;   // 0x306f 1 byte gps pos idx
+      u8 gpstz;    // 0x3070 1 byte gps tz idx UTC-12 to UTC+12
+      u8 gpsspeed; // 0x3071 1 byte gps speed UOM idx
+      u8 gpsdist;  // 0x3072 1 byte gps dist UOM idx
+      u8 gpsalt;   // 0x3073 1 byte gps alt UOM idx
+      u8 fixlat[0x05]; // 0x3074 5 byte fixed long
+      u8 fixlon[0x05]; // 0x3079 5 byte fixed lat
+      i32 fixalt;      // 0x307e 4 byte fixed alt
     } gnss;
+
     // H9 APRS
-    #seekto 0x307c;
+    #seekto 0x3082;
     struct { // APRS config data, 0x98 bytes
-      u8 unknown0[0x7b];
+      u8 unknown0[2];
+      u8 on; // 0x3084 1 byte APRS on/off bool
+      u8 unknown1[0x79];
       u8 unused0:7,   // 0x30f7
         timed_beacon:1; // 1 bit timed beacon on/off
       u8 timing[1];   // 0x30f8 1 byte beacon timing in seconds
-      u8 unknown1[0x1c];
+      u8 unknown2[0x1c];
     } aprs;
     """
 
@@ -2269,6 +2580,66 @@ class TDH9(TDH3_Plus):
         rf.valid_modes = self._modes
         rf.valid_tuning_steps = self._steps
         return rf
+
+    def get_settings_gnss(self, gnss_settings, settings_mem):
+        # GPS on/off
+        rs = RadioSettingValueBoolean(settings_mem.on)
+        mset = MemSetting('gnss.on', 'GPS On/Off', rs)
+        mset.set_doc('Turn the GNSS GPS function On or Off')
+        gnss_settings.append(mset)
+        # Position
+        rs = RadioSettingValueList(self._gpspos_list,
+                                   current_index=settings_mem.gpspos)
+        mset = MemSetting('gnss.gpspos', 'Position', rs)
+        mset.set_doc('Set the GPS coordinate display format')
+        gnss_settings.append(mset)
+        # Time zone
+        rs = RadioSettingValueList(self._gpstz_list,
+                                   current_index=settings_mem.gpstz)
+        mset = MemSetting('gnss.gpstz', 'Time Zone', rs)
+        mset.set_doc('Select the GPS tinezone offset value for \'local\' time')
+        gnss_settings.append(mset)
+        # Speed unit
+        rs = RadioSettingValueList(self._gpsspeed_list,
+                                   current_index=settings_mem.gpsspeed)
+        mset = MemSetting('gnss.gpsspeed', 'Speed Unit', rs)
+        mset.set_doc('Select the GPS Speed display Unit')
+        gnss_settings.append(mset)
+        # Dist unit
+        rs = RadioSettingValueList(self._gpsdist_list,
+                                   current_index=settings_mem.gpsdist)
+        mset = MemSetting('gnss.gpsdist', 'Distance Unit', rs)
+        mset.set_doc('Select the GPS Distance display Unit')
+        gnss_settings.append(mset)
+        # Alt unit
+        rs = RadioSettingValueList(self._gpsalt_list,
+                                   current_index=settings_mem.gpsalt)
+        mset = MemSetting('gnss.gpsalt', 'Altitude Unit', rs)
+        mset.set_doc('Select the GPS Altitude display Unit')
+        gnss_settings.append(mset)
+        # Fix lon
+        # Fix lat
+        # Fix alt
+
+    def get_settings_aprs(self, aprs_settings, settings_mem):
+        # APRS on/off
+        rs = RadioSettingValueBoolean(settings_mem.on)
+        mset = MemSetting('aprs.on', 'APRS Switch', rs)
+        mset.set_doc('Turn the APRS function On or Off')
+        aprs_settings.append(mset)
+
+    def get_settings_spec(self, spec_settings, settings_mem):
+        _settings_mem = self._memobj.gnss
+        super().get_settings_spec(spec_settings, settings_mem)
+        # GNSS
+        gnss = RadioSettingGroup('gnss', 'GNSS')
+        self.get_settings_gnss(gnss, _settings_mem)
+        spec_settings.append(gnss)
+        # APRS
+        _settings_mem = self._memobj.aprs
+        aprs = RadioSettingGroup('aprs', 'APRS')
+        self.get_settings_aprs(aprs, _settings_mem)
+        spec_settings.append(aprs)
 
     def get_sub_devices(self):
         return [TDH9VhfUhf(self._mmap),
@@ -2306,7 +2677,7 @@ class TDH9_HAM(TDH9, TDH3_Plus_HAM):
     _txbands = [(144000000, 149000000), (420000000, 451000000)]
     _rxbands = [(18000000, 107999000), (108000000, 136000000),
                 (149990000, 419990000), (451000000, 600000000)]
-    _tx220 = [(222000000, 225000000)]
+    _tx200 = [(222000000, 225000000)]
     # leave out 219-220 sub-band because this radio doesn't do
     # fixed digital message forwarding
     # tx350 and tx500 bands unknown; add them if you are in a
@@ -2316,8 +2687,8 @@ class TDH9_HAM(TDH9, TDH3_Plus_HAM):
         _settings = self._memobj.settings
         bands = []
         bands.extend(self._txbands)
-        if _settings.tx220:
-            bands.extend(self._tx220)
+        if _settings.tx200:
+            bands.extend(self._tx200)
         return bands
 
 
@@ -2351,8 +2722,8 @@ class RT730(TDH8):
     _mem_params = {
         'channels': 200,
         'fmb_channels': 25,
-        'dtmf_strings': 0,
-        'dtmf_len': 0,
+        'dtmf_strings': 8,
+        'dtmf_len': 16,
         'name_len': 8,
     }
     _txbands = [(136000000, 174000000), (174000000, 300000000),
@@ -2365,33 +2736,36 @@ class RT730(TDH8):
     _has_am_per_channel = False
     _has_offsetdir = False
     _has_scramble = True
-    _has_dtmf = False
-    _has_pttid = False
-    _has_dtmf_len = False
-    _has_stored_dtmf = False
+    _has_dtmf = True
+    _has_pttid = True
+    _has_dtmf_len = True
+    _has_stored_dtmf = True
     _has_dtmf_terminated = False
-    _has_stuncode = False
-    _has_killcode = False
+    _has_stuncode = True
+    _has_killcode = True
     _has_dtmf_extra = False
     _has_scan_hangtime = False
     _has_freq_ranger = False
     _has_pf2_button = True
     _has_top_button = False
     _has_def_chan = False
-    _has_bluetooth = False
+    _has_simple_bluetooth = False
+    _has_bluetooth = _has_simple_bluetooth
     _has_brightness = False
     _has_spec = True
 
     _lang_map = [('Chinese', 0), ('English', 1)]
     _scramble_list = ['Disabled', 'Enabled']
     _short_press_list = ['None', 'Scan', 'FM Radio', 'Warn', 'TONE',
-                         'Weather', 'Copy CH',
+                         'Weather', 'Talk', 'Reverse',
                          ]
     _long_press_list = _short_press_list + ['Monitor']
     _voxgain_list = ['Off', '1', '2', '3']
     _voxdelay_list = ['0.5s', '1.0s', '2.0s', '3.0s']
     _backlight_list = ['CONT', '10s', '20s', '30s']
     _hop_list = ['A', 'B', 'C', 'D']
+    _dtmfdelay_list = ['%d' % x for x in range(100, 1600, 100)]
+    _dtmfspeed_list = ['%d' % x for x in range(50, 160, 10)]
 
     _mem_format = """
     // 16 byte memory channel
@@ -2400,8 +2774,9 @@ class RT730(TDH8):
       lbcd txfreq[4];
       lbcd rxtone[2];
       lbcd txtone[2];
-      u8 unused1;
-      u8 unused2:4,
+      u8 unused0;
+      u8 pttid:2,
+         unused2:2,
         spec:1,
         bcl:1,
         unused3:2;
@@ -2419,6 +2794,11 @@ class RT730(TDH8):
     struct name_obj {
       char name[%(name_len)i];
     };
+
+    // dtmf string
+    struct dtmf_obj {
+      u8 code[%(dtmf_len)i];
+    };
     """
 
     _button_format = """
@@ -2435,9 +2815,17 @@ class RT730(TDH8):
 
     _settings_format = """
     struct settings_obj {
+      u8 unused0:6,
+        kill:1,
+        stun:1;
+      u8 unused0;
+      u8 dtmfdelay;
+      u8 dtmfspeed;
+      u8 unused1[5];
       u8 txled:1,
         rxled:1,
-        unused1:5,
+        unused2:4,
+        dtmfst:1,
         pritx:1;
       u8 scanmode:2,
         unused2:1,
@@ -2458,7 +2846,7 @@ class RT730(TDH8):
       u8 unused6;
       u8 unused7;
       u8 fmdefch;
-      u8 unused8:1,
+      u8 ani:1, // 0x0caf ANI bool on/off
         tailclean:1,
         unused9:3,
         voxgain:3;
@@ -2489,7 +2877,8 @@ class RT730(TDH8):
     #seekto 0x0c98;
     struct button_obj button;
     // Settings
-    #seekto 0x0ca8;
+    #seekto 0x0c9f;
+    //#seekto 0x0ca0;
     struct settings_obj settings;
     // freq offset for vfo a & b
     #seekto 0x0cb8;
@@ -2503,6 +2892,31 @@ class RT730(TDH8):
     // power on message
     #seekto 0x1398;
     struct poweron_msg2_obj poweron_msg;
+    // Remote Stun & Kill Codes
+    #seekto 0x1408;
+    struct {
+      struct dtmf_obj stun;
+      struct dtmf_obj kill;
+    } remote;
+    // id code
+    #seekto 0x1428;
+    struct {
+      u8 code[3];
+    } id;
+    // Group Code
+    #seekto 0x1431;
+    struct {
+        u8 code;
+    } group;
+    // DTMF strings
+    #seekto 0x1438;
+    struct dtmf_obj dtmf[%(dtmf_strings)i];
+    // PTT ID Code
+    #seekto 0x14c8;
+    struct {
+        struct dtmf_obj bot;
+        struct dtmf_obj eot;
+    } pttid;
     // channel used flags
     #seekto 0x1a08;
     struct{
@@ -2569,6 +2983,39 @@ class RT730(TDH8):
         spec_settings.append(mset)
         # button settings
         self.get_settings_button(spec_settings, self._memobj.button)
+        # DTMF
+        if self._has_dtmf:
+            _dtmf_mem = self._memobj.dtmf
+            dtmf = RadioSettingGroup('dtmf', 'DTMF')
+            # ANI
+            rs = RadioSettingValueBoolean(settings_mem.ani)
+            mset = MemSetting('settings.ani', 'ANI', rs)
+            mset.set_doc('Set to enable DTMF ANI functionality')
+            dtmf.append(mset)
+            self.get_settings_dtmf(dtmf, _dtmf_mem)
+            spec_settings.append(dtmf)
+            # kill
+            rs = RadioSettingValueBoolean(settings_mem.kill)
+            mset = MemSetting('settings.kill', 'Killed', rs)
+            mset.set_doc('Clear to remove the remote Kill status of the radio')
+            dtmf.append(mset)
+            # stun
+            rs = RadioSettingValueBoolean(settings_mem.stun)
+            mset = MemSetting('settings.stun', 'Stunned', rs)
+            mset.set_doc('Clear to remove the remote Stun status of the radio')
+            dtmf.append(mset)
+            # dtmf tx delay
+            rs = RadioSettingValueList(self._dtmfdelay_list,
+                                       current_index=settings_mem.dtmfdelay)
+            mset = MemSetting('settings.dtmfdelay', 'DTMF Delay', rs)
+            mset.set_doc('Set the DTMF delay time in milliseconds.')
+            dtmf.append(mset)
+            # dtmf speed
+            rs = RadioSettingValueList(self._dtmfspeed_list,
+                                       current_index=settings_mem.dtmfspeed)
+            mset = MemSetting('settings.dtmfspeed', 'DTMF Speed', rs)
+            mset.set_doc('Set the DTMF speed in milliseconds.')
+            dtmf.append(mset)
         # A/B Chan
         abchan = RadioSettingGroup('abchan', 'VFO A/B Channel')
         self.get_settings_ab(abchan,  settings_mem)
@@ -2615,19 +3062,22 @@ class RT730FM(RT730, TDH8FM):
 @directory.detected_by(TDH8)
 class TDH8_3rd_Gen(TDH3):
     """TIDRADIO TD-H8 3rd Gen Normal"""
+    # This driver is based on Version 260130 firmware
     VENDOR = 'TIDRADIO'
     MODEL = 'TD-H8'
     VARIANT = 'G3'
     ident_mode = b'P31183\xff\xff'
-    _idents = [TD_H3, TD_H8_G3]  # Fw 250905 and later uses H3 magic
+    _idents = [TD_H8_G3, TD_H3]  # Needs TD_H3 magic for BLE connection
     _ham = False
     _gmrs = False
     _has_brightness = True
+    _has_top_button = True
+    _has_pf2_button = True
+
     _tx_power = [chirp_common.PowerLevel('Low',  watts=1.00),
                  chirp_common.PowerLevel('Mid',  watts=5.00),
                  chirp_common.PowerLevel('High', watts=10.00),
                  ]
-    _roger_list = ['Off', 'TONE1', 'TONE2']
 
     def get_features(self):
         rf = super().get_features()
@@ -2654,14 +3104,14 @@ class TDH8_3rd_Gen(TDH3):
 class TDH8G3VhfUhf(TDH8_3rd_Gen):
     """TIDRADIO TD-H8 3rd Gen VHF/UHF subdevice"""
     VENDOR = 'TIDRADIO'
-    MODEL = 'TD-H8 G3'
+    MODEL = 'TD-H8'
     VARIANT = 'VHF/UHF'
 
 
 class TDH8G3FM(TDH8FM, TDH8_3rd_Gen):
     """TIDRADIO TD-H8 3rd Gen FM broadcast radio subdevice"""
     VENDOR = 'TIDRADIO'
-    MODEL = 'TD-H8 G3'
+    MODEL = 'TD-H8'
     VARIANT = 'FM Broadcast'
     _fmband = [(87000000, 108000000)]  # in Mhz, 87.0-108.0 MH
 
@@ -2682,7 +3132,7 @@ class TDH8_3rd_Gen_HAM(TDH8_3rd_Gen):
     _txbands = [(144000000, 149000000), (420000000, 451000000)]
     _rxbands = [(18000000, 107999000), (108000000, 136000000),
                 (149990000, 419990000), (451000000, 600000000)]
-    _tx220 = [(222000000, 225000000)]
+    _tx200 = [(222000000, 225000000)]
     # leave out 219-220 sub-band because this radio doesn't do
     # fixed digital message forwarding
     # tx350 and tx500 bands unknown; add them if you are in a
@@ -2692,8 +3142,8 @@ class TDH8_3rd_Gen_HAM(TDH8_3rd_Gen):
         _settings = self._memobj.settings
         bands = []
         bands.extend(self._txbands)
-        if _settings.tx220:
-            bands.extend(self._tx220)
+        if _settings.tx200:
+            bands.extend(self._tx200)
         return bands
 
 
@@ -2719,10 +3169,12 @@ class TDH8_3rd_Gen_GMRS(TDH8_3rd_Gen):
 # ident_mode and some different features.
 class TDH8_4th_Gen(TDH3_Plus):
     """TIDRADIO TD-H8 4th Gen Normal"""
+    # This driver is based on Version 1.0.11 firmware
     VENDOR = 'TIDRADIO'
-    MODEL = 'TD-H8 G4'
+    MODEL = 'TD-H8'
+    VARIANT = 'G4'
     ident_mode = b'TDH84GEN'
-    _idents = [TD_H3]
+    _idents = [TD_H8]
     _ham = False
     _gmrs = False
     _tx_power = [chirp_common.PowerLevel('Low',  watts=1.00),
@@ -2731,6 +3183,11 @@ class TDH8_4th_Gen(TDH3_Plus):
                  ]
     _has_pf2_button = True
     _has_top_button = True
+    _has_morse = False
+    _has_xt220 = True
+    _has_simple_bluetooth = True
+    _has_bluetooth = not _has_simple_bluetooth
+    _needs_ble_checksum = False
 
     def get_features(self):
         rf = super().get_features()
@@ -2738,6 +3195,15 @@ class TDH8_4th_Gen(TDH3_Plus):
         rf.valid_modes = self._modes
         rf.valid_tuning_steps = self._steps
         return rf
+
+    def get_settings_bluetooth(self, bt_settings, bt_mem):
+        """bluetooth radio settings"""
+        # bluetooth on/off
+        TDH3(self).get_settings_bluetooth(bt_settings, bt_mem)
+        # rs = RadioSettingValueBoolean(bt_mem.on)
+        # mset = MemSetting('bluetooth.on', 'Bluetooth Serial', rs)
+        # mset.set_doc('Set the Bluetooth Serial (BLE) connectivity On/Off.')
+        # bt_settings.append(mset)
 
     def get_sub_devices(self):
         return [TDH8G4VhfUhf(self._mmap),
@@ -2748,14 +3214,14 @@ class TDH8_4th_Gen(TDH3_Plus):
 class TDH8G4VhfUhf(TDH8_4th_Gen):
     """TIDRADIO TD-H8 4th Gen VHF/UHF subdevice"""
     VENDOR = 'TIDRADIO'
-    MODEL = 'TD-H8 G4'
+    MODEL = 'TD-H8'
     VARIANT = 'VHF/UHF'
 
 
 class TDH8G4FM(TDH8FM, TDH8_4th_Gen):
     """TIDRADIO TD-H8 4th Gen FM broadcast radio subdevice"""
     VENDOR = 'TIDRADIO'
-    MODEL = 'TD-H8 G4'
+    MODEL = 'TD-H8'
     VARIANT = 'FM Broadcast'
     _fmband = [(87000000, 108000000)]  # in Mhz, 87.0-108.0 MH
 
@@ -2769,14 +3235,14 @@ class TDH8G4FM(TDH8FM, TDH8_4th_Gen):
 class TDH8_4th_Gen_Ham(TDH8_4th_Gen):
     """TIDRADIO TD-H8 4th Gen Ham"""
     VENDOR = 'TIDRADIO'
-    MODEL = 'TD-H8 G4 HAM'
+    MODEL = 'TD-H8-HAM'
     ident_mode = b'TDH84GEH'
     _ham = True
     _gmrs = False
     _txbands = [(144000000, 149000000), (420000000, 451000000)]
     _rxbands = [(18000000, 107999000), (108000000, 136000000),
                 (149990000, 419990000), (451000000, 600000000)]
-    _tx220 = [(222000000, 225000000)]
+    _tx200 = [(222000000, 225000000)]
     # leave out 219-220 sub-band because this radio doesn't do
     # fixed digital message forwarding
     # tx350 and tx500 bands unknown; add them if you are in a
@@ -2786,8 +3252,8 @@ class TDH8_4th_Gen_Ham(TDH8_4th_Gen):
         _settings = self._memobj.settings
         bands = []
         bands.extend(self._txbands)
-        if _settings.tx220:
-            bands.extend(self._tx220)
+        if _settings.tx200:
+            bands.extend(self._tx200)
         return bands
 
 
@@ -2796,7 +3262,7 @@ class TDH8_4th_Gen_Ham(TDH8_4th_Gen):
 class TDH8_4th_Gen_GMRS(TDH8_4th_Gen):
     """TIDRADIO TD-H8 4th Gen GMRS"""
     VENDOR = 'TIDRADIO'
-    MODEL = 'TD-H8 G4 GMRS'
+    MODEL = 'TD-H8-GMRS'
     ident_mode = b'TDH84GEG'
     _gmrs = True
     _ham = False
