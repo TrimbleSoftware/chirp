@@ -2096,11 +2096,6 @@ class TDH3FM(TDH8FM, TDH3):
     _fmband = [(65000000, 108000000)]  # in Mhz, 65.0-108.0 MH
     _mem_params = TDH3._mem_params
 
-    def get_features(self):
-        rf = super().get_features()
-        rf.valid_bands = self._rxbands
-        return rf
-
 
 @directory.register
 @directory.detected_by(TDH3)
