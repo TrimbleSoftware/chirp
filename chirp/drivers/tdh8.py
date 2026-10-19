@@ -299,6 +299,7 @@ def validate_gmrs_memory(mem):
 @directory.register
 class TDH8(chirp_common.CloneModeRadio):
     """TIDRADIO TD-H8 Normal"""
+    # This driver is based on Version 230923 firmware
     VENDOR = 'TIDRADIO'
     MODEL = 'TD-H8'
     ident_mode = b'P31183\xff\xff'
@@ -353,6 +354,13 @@ class TDH8(chirp_common.CloneModeRadio):
     _has_spec = False
     _has_alarm_mode = False
     _has_xt220 = False
+    _has_scanband = False
+    _has_onlychmode = True
+    _has_repeater_tone = True
+    _has_repeater_ste = True
+    _has_talkaround = False
+    _has_pttdelay = False
+
     _needs_ble_checksum = True
     _is_on_ble = False
 
@@ -382,6 +390,7 @@ class TDH8(chirp_common.CloneModeRadio):
     _operating_mode_list = ['NORMAL', 'GMRS', 'HAM']
     _squelch_list = ['%s' % x for x in range(0, 10)]
     _step_list = ['%2.2fK' % x for x in _steps]
+    _rtone_list = ['1000 Hz', '1450 Hz', '1750 Hz', '2100 Hz']
     _pttid_list = ['Off', 'BOT', 'EOT', 'BOTH']
     _dtmf_reset_list = ['Off', '5s', '10s', '15s']
     _dtmf_resp_list = ['NULL', 'RING', 'REPLY', 'BOTH']
@@ -389,6 +398,7 @@ class TDH8(chirp_common.CloneModeRadio):
     _pritx_list = ['MAIN', 'Busy']
     _scanmode_list = ['TO', 'CO', 'SE']
     _vfo_workmode_list = ['VFO', 'VFO+Channel', 'Channel']
+    _mdf_list = ['Frequency', 'Name']
     _fmworkmode_list = ['VFO', 'CH']
     _short_press_list = ['None', 'FM Radio', 'Lamp', 'Monitor',
                          'TONE', 'Alarm', 'Weather',
@@ -401,8 +411,13 @@ class TDH8(chirp_common.CloneModeRadio):
     _backlight_list = ['CONT', '5s', '10s', '15s', '30s']
     _breath_led_list = ['Off', '5s', '10s', '15s', '30s']
     _ponmsg_list = ['Off', 'Msg', 'Icon']
+    _save_list = ["Off", "1:1", "1:2", "1:3", "1:4", "1:8"]
+    _rptdelay_list = ['Off'] + ['%s' % x for x in range(1, 11)]
 
     _fmrec_shortname = 'Allow Receive'
+    _dtmf_shortname = 'DTMF-%d'
+    _save_shortname = "Power Save"
+    _mfd_shortname = 'MFD-%s'
 
     _mem_format = """
     // 16 byte memory channel
@@ -489,8 +504,6 @@ class TDH8(chirp_common.CloneModeRadio):
         rxled:1,
         unused11:1,
         mode:2, // Radio op mode: 0=Normal, 1=GMRS, 2=HAM, 3=unused
-        //ham:1,
-        //gmrs:1,
         unused14:1,
         dtmfst:1,
         pritx:1;
@@ -503,7 +516,7 @@ class TDH8(chirp_common.CloneModeRadio):
         voiceprompt:1;
       u8 fmworkmode:1,
         dualwatch:1,
-        tonevoice:2,
+        rptrtone:2,
         fmrec:1,
         mdfa:1,
         aworkmode:2;
@@ -537,7 +550,7 @@ class TDH8(chirp_common.CloneModeRadio):
     };
     """
 
-    _end_fromat = """
+    _end_format = """
     """
 
     #  TD-H8 Gen 2
@@ -601,11 +614,11 @@ class TDH8(chirp_common.CloneModeRadio):
         struct dtmf_obj bot;
         struct dtmf_obj eot;
     } pttid;
-    // Repeater ste & ttd
+    // Repeater ste & rl
     #seekto 0x1f0a;
     struct {
       u8 ste; // repeater squelch tail elimination
-      u8 ttd; // repeater tail tone delay
+      u8 rl;  // repeater release delay
     } repeater;
     // mic gain
     #seekto 0x1f28;
@@ -724,7 +737,7 @@ class TDH8(chirp_common.CloneModeRadio):
         fmt = (self._mem_format + self._common_format +
                self._name_format + self._button_format +
                self._settings_format + self._memory_format +
-               self._end_fromat) % self._mem_params
+               self._end_format) % self._mem_params
         self._memobj = bitwise.parse(fmt, self._mmap)
 
     def sync_in(self):
@@ -1137,6 +1150,14 @@ class TDH8(chirp_common.CloneModeRadio):
         mset.set_doc('Set to have radio screen backlight display when '
                      'RX is active.')
         basic_settings.append(mset)
+        # only CH mode
+        if self._has_onlychmode:
+            rs = RadioSettingValueBoolean(settings_mem.onlychmode)
+            mset = MemSetting('settings.onlychmode', 'Only CH Mode', rs)
+            mset.set_doc('Set to have radio operate in \'Only CH Mode\', '
+                         'where only the channel selection feature of the '
+                         'radio functions.')
+            basic_settings.append(mset)
         # backlight control
         rs = RadioSettingValueList(self._backlight_list,
                                    current_index=settings_mem.ligcon)
@@ -1159,6 +1180,13 @@ class TDH8(chirp_common.CloneModeRadio):
             mset = MemSetting('settings.alarm', 'Alarm Mode', rs)
             mset.set_doc('Select the radio\'s Alarm Mode')
             basic_settings.append(mset)
+        # repeater tone
+        if self._has_repeater_tone:
+            rs = RadioSettingValueList(self._rtone_list,
+                                       current_index=settings_mem.rptrtone)
+            mset = MemSetting('settings.rptrtone', 'Repeater Tone', rs)
+            mset.set_doc('Set the Tone used to open a repeater.')
+            basic_settings.append(mset)
         # language
         _lang_mem = self._memobj.menu.lang if hasattr(self._memobj, 'menu') \
             else self._memobj.settings.lang
@@ -1166,7 +1194,7 @@ class TDH8(chirp_common.CloneModeRadio):
             else 'settings.lang'
         rs = RadioSettingValueMap(self._lang_map, _lang_mem)
         mset = MemSetting(_lang_path, 'Language', rs)
-        mset.set_doc('Set the radio language.')
+        mset.set_doc('Set the radio menulanguage.')
         basic_settings.append(mset)
 
     def get_settings_fmb(self, fm_settings, settings_mem):
@@ -1205,6 +1233,13 @@ class TDH8(chirp_common.CloneModeRadio):
                                        current_index=_menu.hangtime)
             mset = MemSetting('menu.hangtime', 'Scan Hang Time', rs)
             mset.set_doc('Set the scan resume mode timeout value(s).')
+            scan_settings.append(mset)
+        # scan band
+        if self._has_scanband:
+            rs = RadioSettingValueList(self._scanband_list,
+                                       current_index=settings_mem.scanband)
+            mset = MemSetting('settings.scanband', 'Scan Band', rs)
+            mset.set_doc('Select the band for VFO scanning')
             scan_settings.append(mset)
         # Freq ranger
         if self._has_freq_ranger:
@@ -1254,7 +1289,7 @@ class TDH8(chirp_common.CloneModeRadio):
                                              _code, True)
                 rs.set_charset(DTMF_CHARS)
                 rset = RadioSetting('dtmf.%i.code' % i,
-                                    'DTMF-%i' % (i + 1), rs)
+                                    self._dtmf_shortname % (i + 1), rs)
                 rset.set_apply_callback(self.apply_dtmf_code,
                                         _codeobj, self._has_dtmf_len,
                                         self._has_dtmf_terminated)
@@ -1491,6 +1526,18 @@ class TDH8(chirp_common.CloneModeRadio):
         # Bluetooth settings
         if self._has_simple_bluetooth:
             self.get_settings_bluetooth(spec_settings, self._memobj.bluetooth)
+        # mdf a
+        rs = RadioSettingValueList(self._mdf_list,
+                                   current_index=settings_mem.mdfa)
+        mset = MemSetting('settings.mdfa', self._mfd_shortname % 'A', rs)
+        mset.set_doc('Set how the A Channel will be displayed')
+        spec_settings.append(mset)
+        # mdf b
+        rs = RadioSettingValueList(self._mdf_list,
+                                   current_index=settings_mem.mdfb)
+        mset = MemSetting('settings.mdfb', self._mfd_shortname % 'B', rs)
+        mset.set_doc('Set how the B Channel will be displayed')
+        spec_settings.append(mset)
         # AM band
         if self._has_am_band:
             rs = RadioSettingValueBoolean(settings_mem.amband)
@@ -1515,6 +1562,20 @@ class TDH8(chirp_common.CloneModeRadio):
                                        current_index=_menu.display)
             mset = MemSetting('menu.display', 'Display Mode', rs)
             mset.set_doc('Select the radio display mode')
+            spec_settings.append(mset)
+        if self._has_talkaround:
+            rs = RadioSettingValueBoolean(self._memobj.misc.talkaround)
+            mset = MemSetting('misc.talkaround', 'Talk Around', rs)
+            mset.set_doc('Set to put the radio in talk-around mode')
+            spec_settings.append(mset)
+        # ptt delay
+        if self._has_pttdelay:
+            rs = RadioSettingValueList(self._pttdelay_list,
+                                       current_index=\
+                                       self._memobj.misc.pttdelay)
+            mset = MemSetting('misc.pttdelay', 'PTT Delay', rs)
+            mset.set_doc('Set the PTT Delay to continue TX for the select '
+                         'time after the PTT is released')
             spec_settings.append(mset)
         # menu color
         if self._has_menu_color:
@@ -1549,6 +1610,33 @@ class TDH8(chirp_common.CloneModeRadio):
         spec_settings.append(mset)
         # power-on message text
         self.get_settings_pom(spec_settings, self._memobj.poweron_msg)
+        # power save
+        rs = RadioSettingValueList(self._save_list,
+                                   current_index=settings_mem.save)
+        mset = MemSetting('settings.save', self._save_shortname, rs)
+        mset.set_doc('Set the battery ' + self._save_shortname + ' mode.')
+        spec_settings.append(mset)
+        # ste
+        rs = RadioSettingValueBoolean(settings_mem.tailclean)
+        mset = MemSetting('settings.tailclean', 'Squelch TAIL Elimination', rs)
+        mset.set_doc('Set to have the squelch tail removed from a '
+                     'transmission.')
+        spec_settings.append(mset)
+        if self._has_repeater_ste:
+            # repeater ste
+            rpt = self._memobj.repeater
+            rs = RadioSettingValueList(self._rptdelay_list,
+                                       current_index=rpt.ste)
+            mset = MemSetting('repeater.ste', 'RP-STE', rs)
+            mset.set_doc('Set the repeater squelch tail elimination delay '
+                         'factor')
+            spec_settings.append(mset)
+            # repeater release delay
+            rs = RadioSettingValueList(self._rptdelay_list,
+                                       current_index=rpt.rl)
+            mset = MemSetting('repeater.rl', 'RP-RL', rs)
+            mset.set_doc('Set the repeater squelch release delay facrtor')
+            spec_settings.append(mset)
         # kill/stun
         if self._has_killcode:
             rs = RadioSettingValueBoolean(settings_mem.kill)
@@ -1865,6 +1953,8 @@ class TDH3(TDH8):
     _has_brightness = True
     _has_alarm_mode = True
     _has_xt220 = True
+    _has_scanband = True
+    _has_onlychmode = True
 
     _tx_power = [chirp_common.PowerLevel('Low', watts=2.00),
                  chirp_common.PowerLevel('High', watts=5.00),
@@ -1883,6 +1973,17 @@ class TDH3(TDH8):
     _micgain_list = ['%02d' % x for x in range(0, 10)]
     _roger_list = ['Off', 'TONE1', 'TONE2']
     _alarm_list = ['On Site', 'TX Alarm']
+    _scanband_list = ['All',
+                      '0.5M',
+                      '1.0M',
+                      '1.5M',
+                      '2.0M',
+                      '2.5M',
+                      '3.0M',
+                      '3.5M',
+                      '4.0M',
+                      '4.5M',
+                      '5.0M']
 
     _name_format = """
     // channel name
@@ -1915,8 +2016,6 @@ class TDH3(TDH8):
         rxled:1,
         unused11:1,
         mode:2, // Radio op mode: 0=Normal, 1=GMRS, 2=HAM, 3=unused
-        //ham:1,
-        //gmrs:1,
         unused14:1,
         dtmfst:1,
         pritx:1;
@@ -1929,7 +2028,7 @@ class TDH3(TDH8):
         voiceprompt:1;
       u8 fmworkmode:1,
         dualwatch:1,
-        tonevoice:2,
+        rptrtone:2,
         fmrec:1,
         mdfa:1,
         aworkmode:2;
@@ -1970,7 +2069,7 @@ class TDH3(TDH8):
     };
     """
 
-    _end_fromat = """
+    _end_format = """
     // bluetooth
     #seekto 0x1f38;
     struct {
@@ -2046,11 +2145,11 @@ class TDH3(TDH8):
     // power on message
     #seekto 0x1c08;
     struct poweron_msg_obj poweron_msg;
-    // Repeater ste & ttd
+    // Repeater ste & rl
     #seekto 0x1f0a;
     struct {
       u8 ste; // repeater squelch tail elimination
-      u8 ttd; // repeater tail tone delay
+      u8 rl; // repeater release delay
     } repeater;
     // mic gain
     #seekto 0x1f28;
@@ -2182,6 +2281,11 @@ class TDH3_Plus(TDH3):
     _has_disp_mode = True
     _has_menu_color = True
     _has_morse = True
+    _has_scanband = False
+    _has_onlychmode = False
+    _has_repeater_ste = False
+    _has_talkaround = True
+    _has_pttdelay = True
 
     # settings maps
     _lang_map = [
@@ -2217,12 +2321,14 @@ class TDH3_Plus(TDH3):
     _odptt_list = ['OD', 'OD+Analog']
     _odmode_list = ['Local Mode', 'Forward Mode', 'Full Mode']
     _intgain_list = ['Gain Level %d' % x for x in range(1, 6)]
-
+    _mdf_list = ['Freq + Number', 'Name + Number']
+    _pttdelay_list = ['%dMS' % x for x in range(100, 3100, 100)]
     _morsetone_list = ['%d Hz' % x for x in [500, 600, 700, 800, 1000]]
     _morsespeed_list = ['%d WPM' % x for x in [5, 8, 12, 18, 24]]
     _morserxthresh_list = ['Weak', 'Med-Weak', 'Medium', 'Med-Str', 'Strong']
 
     _fmrec_shortname = 'FM Interrupt'
+    _mfd_shortname = 'Display Type-%s'
 
     _txbands = [(136000000, 174000000), (200000000, 600000000)]
     _rxbands = [(18000000, 600000000)]
@@ -2238,7 +2344,7 @@ class TDH3_Plus(TDH3):
     _img_file_header = ident_mode + (b'\xff' * 16)  # CHIRP .img file header
     _img_file_offset = len(_img_file_header)  # offset of data in CHIRP .img
 
-    _end_fromat = """
+    _end_format = """
     // bluetooth
     #seekto 0x1f29;
     struct {
@@ -2265,12 +2371,24 @@ class TDH3_Plus(TDH3):
       u8 hangtime;  // 0x1f37 H9, H3+ scan hangtime
     } menu;
 
+    // misc
+    #seekto 0x3000;
+    struct {
+      u8 unknown0[19];
+      u8 unknown1:3, // 0x3013
+        pttdelay:5;  //   5 bit ptt delay idx
+      u8 unused0:7,
+        talkaround:1; // 0x3014 1 bit talkaround on/off bool
+      u8 callcode;    // 0x3015 1 byte callcode idx 0-7
+      u8 unknown2[8];
+    } misc;
+
     // SMS
     #seekto 0x301d;
     struct {
-      u8 on;       // 0x301d 1 byte sms on/off bool
-      u8 mode;     // 0x301e 1 byte sms mode idx
-      u8 rxfilter; // 0x301f 1 byte sms rx filter on/off bool
+      u8 on;         // 0x301d 1 byte sms on/off bool
+      u8 mode;       // 0x301e 1 byte sms mode idx
+      u8 rxfilter;   // 0x301f 1 byte sms rx filter on/off bool
     } sms;
 
     // Morse
@@ -2301,7 +2419,7 @@ class TDH3_Plus(TDH3):
             chirp_common.CloneModeRadio.load_mmap(self, filename)
 
     def save_mmap(self, filename):
-        """Save .img map bytes as H9 OEM CPS .td file.
+        """Save .img map bytes as H3 Plus OEM CPS .td file.
         After replacing .img header with .td header and
         padding to full length"""
         if filename.lower().endswith('.td'):
@@ -2509,7 +2627,7 @@ class TDH9(TDH3_Plus):
     # NOTICE: For uploading to an TD-H9 over a BLE connection,
     # the ble-serial MTU must be set to atleast 37 of the first block
     # write will fail to ACK.
-    # ble-serial -d xx:xx:xx:xx:xx:xx -m 37 -vvv
+    # ble-serial -d xx:xx:xx:xx:xx:xx -m 37
     VENDOR = 'TIDRADIO'
     MODEL = 'TD-H9'
     ident_mode = b'TDH9\xff\xff\xff\x4e'
@@ -2543,33 +2661,37 @@ class TDH9(TDH3_Plus):
     _gpsspeed_list = ['Km/h', 'Knot', 'm/s']
     _gpsdist_list = ['Km', 'Sea', 'Mile']
     _gpsalt_list = ['M', 'Ft']
+    _gpssite_list = ['Fix Coord', 'GPS Coord']
     _smsmode_list = ['RF', 'APRS']
 
-    _end_fromat = TDH3_Plus._end_fromat + """
+    _end_format = TDH3_Plus._end_format + """
     // H9 GNSS
     #seekto 0x3066;
     struct { // GNSS config data, 0x1c bytes
       u8 unknown0[0x08]; // 0x3066 ???
-      u8 on;       // 0x306e 1 byte GPS on/off bool
-      u8 gpspos;   // 0x306f 1 byte gps pos idx
-      u8 gpstz;    // 0x3070 1 byte gps tz idx UTC-12 to UTC+12
-      u8 gpsspeed; // 0x3071 1 byte gps speed UOM idx
-      u8 gpsdist;  // 0x3072 1 byte gps dist UOM idx
-      u8 gpsalt;   // 0x3073 1 byte gps alt UOM idx
-      u8 fixlat[0x05]; // 0x3074 5 byte fixed long
-      u8 fixlon[0x05]; // 0x3079 5 byte fixed lat
-      i32 fixalt;      // 0x307e 4 byte fixed alt
+      u8 on;             // 0x306e 1 byte GPS on/off bool
+      u8 gpspos;         // 0x306f 1 byte gps pos idx
+      u8 gpstz;          // 0x3070 1 byte gps tz idx UTC-12 to UTC+12
+      u8 gpsspeed;       // 0x3071 1 byte gps speed UOM idx
+      u8 gpsdist;        // 0x3072 1 byte gps dist UOM idx
+      u8 gpsalt;         // 0x3073 1 byte gps alt UOM idx
+      u8 fixlat[0x05];   // 0x3074 5 byte fixed long
+      u8 fixlon[0x05];   // 0x3079 5 byte fixed lat
+      i32 fixalt;        // 0x307e 4 byte fixed alt
     } gnss;
 
     // H9 APRS
     #seekto 0x3082;
     struct { // APRS config data, 0x98 bytes
-      u8 unknown0[2];
-      u8 on; // 0x3084 1 byte APRS on/off bool
-      u8 unknown1[0x79];
-      u8 unused0:7,   // 0x30f7
+      u8 unknown0;
+      u8 gpssite;       // 0x3083 1 byte APRS site type idx
+      u8 on;            // 0x3084 1 byte APRS on/off bool
+      u8 unknown1[0x71];
+      u8 unused0:7,     // 0x30f6
+      ptt_linkage:1;    // 1 bit PTT linkage on/off
+      u8 unused1:7,     // 0x30f7
         timed_beacon:1; // 1 bit timed beacon on/off
-      u8 timing[1];   // 0x30f8 1 byte beacon timing in seconds
+      ul16 timing;      // 0x30f8 2 byte beacon timing in seconds
       u8 unknown2[0x1c];
     } aprs;
     """
@@ -2582,51 +2704,111 @@ class TDH9(TDH3_Plus):
         return rf
 
     def get_settings_gnss(self, gnss_settings, settings_mem):
-        # GPS on/off
+        # 1 GPS on/off
         rs = RadioSettingValueBoolean(settings_mem.on)
         mset = MemSetting('gnss.on', 'GPS On/Off', rs)
         mset.set_doc('Turn the GNSS GPS function On or Off')
         gnss_settings.append(mset)
-        # Position
+        # 3 Position
         rs = RadioSettingValueList(self._gpspos_list,
                                    current_index=settings_mem.gpspos)
         mset = MemSetting('gnss.gpspos', 'Position', rs)
         mset.set_doc('Set the GPS coordinate display format')
         gnss_settings.append(mset)
-        # Time zone
+        # 4 Time zone
         rs = RadioSettingValueList(self._gpstz_list,
                                    current_index=settings_mem.gpstz)
         mset = MemSetting('gnss.gpstz', 'Time Zone', rs)
         mset.set_doc('Select the GPS tinezone offset value for \'local\' time')
         gnss_settings.append(mset)
-        # Speed unit
+        # 5 Speed unit
         rs = RadioSettingValueList(self._gpsspeed_list,
                                    current_index=settings_mem.gpsspeed)
         mset = MemSetting('gnss.gpsspeed', 'Speed Unit', rs)
         mset.set_doc('Select the GPS Speed display Unit')
         gnss_settings.append(mset)
-        # Dist unit
+        # 6 Distance unit
         rs = RadioSettingValueList(self._gpsdist_list,
                                    current_index=settings_mem.gpsdist)
         mset = MemSetting('gnss.gpsdist', 'Distance Unit', rs)
         mset.set_doc('Select the GPS Distance display Unit')
         gnss_settings.append(mset)
-        # Alt unit
+        # 7 Alt unit
         rs = RadioSettingValueList(self._gpsalt_list,
                                    current_index=settings_mem.gpsalt)
         mset = MemSetting('gnss.gpsalt', 'Altitude Unit', rs)
         mset.set_doc('Select the GPS Altitude display Unit')
         gnss_settings.append(mset)
-        # Fix lon
-        # Fix lat
-        # Fix alt
+        # 8 Fix lon
+        # 9 Fix lat
+        # 10 Fix alt
 
     def get_settings_aprs(self, aprs_settings, settings_mem):
-        # APRS on/off
+        # 1 APRS on/off
         rs = RadioSettingValueBoolean(settings_mem.on)
         mset = MemSetting('aprs.on', 'APRS Switch', rs)
         mset.set_doc('Turn the APRS function On or Off')
         aprs_settings.append(mset)
+        # GPS site type
+        rs = RadioSettingValueList(self._gpssite_list,
+                                   current_index=settings_mem.gpssite)
+        mset = MemSetting('aprs.gpssite', 'Site Type', rs)
+        mset.set_doc('Select the APRS site type')
+        aprs_settings.append(mset)
+        # 2 beacon set
+        beacon_set = RadioSettingSubGroup('beacon_set', 'Beacon Set')
+        aprs_settings.append(beacon_set)
+        # 1 call sign
+        # 2 ssid
+        # 3 ssid symbol
+        # 4 custom info
+        # 5 icon settings
+        # 6 MIC-E Start
+        # 7 MIC Type
+        # 8 route 1
+        # 9 route 1 count
+        # 10 route 2
+        # 11 route 2 count
+        # 12 report voltage
+        # 13 report stats
+        # 14 report mileage
+
+        # 3 beacon type
+        beacon_type = RadioSettingSubGroup('beacon_type', 'Beacon Type')
+        aprs_settings.append(beacon_type)
+        # 1 ptt linkage
+        rs = RadioSettingValueBoolean(settings_mem.ptt_linkage)
+        mset = MemSetting('aprs.ptt_linkage', 'PTT Linkage', rs)
+        mset.set_doc('Set to enable the APRS PTT linkage function')
+        beacon_type.append(mset)
+        # 2 timed beacon
+        rs = RadioSettingValueBoolean(settings_mem.timed_beacon)
+        mset = MemSetting('aprs.timed_beacon', 'Timed Beacon', rs)
+        mset.set_doc('Set to enable the APRS timed beacon function')
+        beacon_type.append(mset)
+        # 3 beacon timing
+        rs = RadioSettingValueInteger(1, 0xfffe, settings_mem.timing)
+        mset = MemSetting('aprs.timing', 'Beacon Timing', rs)
+        mset.set_doc('Set the APRS timed beacon interval in seconds')
+        beacon_type.append(mset)
+        # 4 relay set
+        relay_set = RadioSettingSubGroup('relay_set', 'Relay Set')
+        aprs_settings.append(relay_set)
+        # 1 digi forward ch
+        # 2 digi1 enable
+        # 3 digi1 name
+        # 4 digi2 enable
+        # 5 digi2 name
+        # 6 wait before fwd
+        # 7 remote password
+
+        # 5 advanced set
+        advanced_set = RadioSettingSubGroup('advanced_set', 'Advanced Set')
+        aprs_settings.append(advanced_set)
+        # 1 aprs  rx ch
+        # 2 aprs tx ch
+        # 3 ptt priority
+        # 4 rx auto popup
 
     def get_settings_spec(self, spec_settings, settings_mem):
         _settings_mem = self._memobj.gnss
@@ -2711,6 +2893,7 @@ class TDH9_GMRS(TDH9, TDH3_Plus_GMRS):
 @directory.register
 class RT730(TDH8):
     """Radtel RT-730"""
+    # This driver is based on Version 20250731 firmware
     VENDOR = 'Radtel'
     MODEL = 'RT-730'
     _idents = [RT_730]
@@ -2753,7 +2936,14 @@ class RT730(TDH8):
     _has_bluetooth = _has_simple_bluetooth
     _has_brightness = False
     _has_spec = True
+    _has_onlychmode = False
+    _has_repeater_tone = False
+    _has_talkaround = False
+    _has_pttdelay = False
 
+    _steps = [2.5, 5.0, 6.25, 10.0, 12.5, 20.0, 25.0, 8.33]
+    _step_list = ['%2.2fK' % x for x in _steps]
+    _dtmf_shortname = 'Call %d'
     _lang_map = [('Chinese', 0), ('English', 1)]
     _scramble_list = ['Disabled', 'Enabled']
     _short_press_list = ['None', 'Scan', 'FM Radio', 'Warn', 'TONE',
@@ -2865,7 +3055,7 @@ class RT730(TDH8):
     };
     """
 
-    _end_fromat = """
+    _end_format = """
     """
 
     # RT-730
@@ -3073,6 +3263,8 @@ class TDH8_3rd_Gen(TDH3):
     _has_brightness = True
     _has_top_button = True
     _has_pf2_button = True
+    _has_scanband = True
+    _has_onlychmode = True
 
     _tx_power = [chirp_common.PowerLevel('Low',  watts=1.00),
                  chirp_common.PowerLevel('Mid',  watts=5.00),
