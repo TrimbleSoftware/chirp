@@ -35,6 +35,7 @@ from chirp import (
 from chirp.settings import (
     RadioSetting,
     RadioSettings,
+    RadioSettingValueFloat,
     RadioSettingGroup,
     RadioSettingSubGroup,
     RadioSettingValueBoolean,
@@ -360,6 +361,7 @@ class TDH8(chirp_common.CloneModeRadio):
     _has_repeater_ste = True
     _has_talkaround = False
     _has_pttdelay = False
+    _has_callcode = False
 
     _needs_ble_checksum = True
     _is_on_ble = False
@@ -1568,11 +1570,18 @@ class TDH8(chirp_common.CloneModeRadio):
             mset = MemSetting('misc.talkaround', 'Talk Around', rs)
             mset.set_doc('Set to put the radio in talk-around mode')
             spec_settings.append(mset)
+        if self._has_callcode:
+            rs = RadioSettingValueList(
+                self._callcode_list,
+                current_index=self._memobj.misc.callcode)
+            mset = MemSetting('misc.callcode', 'Call Code', rs)
+            mset.set_doc('Set the radio-wide Call Code')
+            spec_settings.append(mset)
         # ptt delay
         if self._has_pttdelay:
-            rs = RadioSettingValueList(self._pttdelay_list,
-                                       current_index=\
-                                       self._memobj.misc.pttdelay)
+            rs = RadioSettingValueList(
+                self._pttdelay_list,
+                current_index=self._memobj.misc.pttdelay)
             mset = MemSetting('misc.pttdelay', 'PTT Delay', rs)
             mset.set_doc('Set the PTT Delay to continue TX for the select '
                          'time after the PTT is released')
@@ -2286,6 +2295,7 @@ class TDH3_Plus(TDH3):
     _has_repeater_ste = False
     _has_talkaround = True
     _has_pttdelay = True
+    _has_callcode = True
 
     # settings maps
     _lang_map = [
@@ -2323,6 +2333,7 @@ class TDH3_Plus(TDH3):
     _intgain_list = ['Gain Level %d' % x for x in range(1, 6)]
     _mdf_list = ['Freq + Number', 'Name + Number']
     _pttdelay_list = ['%dMS' % x for x in range(100, 3100, 100)]
+    _callcode_list = ['%d' % x for x in range(1, 9)]
     _morsetone_list = ['%d Hz' % x for x in [500, 600, 700, 800, 1000]]
     _morsespeed_list = ['%d WPM' % x for x in [5, 8, 12, 18, 24]]
     _morserxthresh_list = ['Weak', 'Med-Weak', 'Medium', 'Med-Str', 'Strong']
@@ -2344,7 +2355,18 @@ class TDH3_Plus(TDH3):
     _img_file_header = ident_mode + (b'\xff' * 16)  # CHIRP .img file header
     _img_file_offset = len(_img_file_header)  # offset of data in CHIRP .img
 
-    _end_format = """
+    _morse_format = """
+    // Morse
+    #seekto 0x302a;
+    struct {
+      u8 tone:4,   // 0x302a 4 bit morse tone idx
+        speed:3,   //   3 bit morse speed idx
+        on:1;      //   1 bit morse on/off bool
+      u8 rxthresh; // 1 byte morse RX thresh idx
+    } morse;
+    """
+
+    _extra_format = """
     // bluetooth
     #seekto 0x1f29;
     struct {
@@ -2390,16 +2412,8 @@ class TDH3_Plus(TDH3):
       u8 mode;       // 0x301e 1 byte sms mode idx
       u8 rxfilter;   // 0x301f 1 byte sms rx filter on/off bool
     } sms;
-
-    // Morse
-    #seekto 0x302a;
-    struct {
-      u8 tone:4, // 0x302a 4 bit morse tone idx
-        speed:3, //   3 bit morse speed idx
-        on:1;    //   1 bit morse on/off bool
-      u8 rxthresh; // 1 byte morse RX thresh idx
-    } morse;
     """
+    _end_format = _morse_format + _extra_format
 
     def load_mmap(self, filename):
         """Read/import TIDRADIO OEM CPS .td file into .img map.
@@ -2623,7 +2637,7 @@ class TDH3_Plus_GMRS(TDH3_GMRS, TDH3_Plus):
 @directory.register
 class TDH9(TDH3_Plus):
     """TIDRADIO H-9 Normal"""
-    # This driver is based on Version 1.0.33 firmware
+    # This driver is based on Version 1.0.38 firmware
     # NOTICE: For uploading to an TD-H9 over a BLE connection,
     # the ble-serial MTU must be set to atleast 37 of the first block
     # write will fail to ACK.
@@ -2648,7 +2662,9 @@ class TDH9(TDH3_Plus):
                  chirp_common.PowerLevel('Mid',  watts=5.00),
                  chirp_common.PowerLevel('High', watts=10.00),
                  ]
-
+    # settings maps
+    _aprsssidsymbol_map = [('/ (Primary Table)', 0x2f),
+                           ('\\ (Alternate Table)', 0x5c)]
     # settings lists
     _short_press_list = ['None', 'FM Radio', 'GNSS SW', 'None', 'Tone',
                          'Alarm', 'Weather', 'PTT2', 'OD PTT',
@@ -2663,8 +2679,225 @@ class TDH9(TDH3_Plus):
     _gpsalt_list = ['M', 'Ft']
     _gpssite_list = ['Fix Coord', 'GPS Coord']
     _smsmode_list = ['RF', 'APRS']
+    _morsekey_list = ['Straight', 'Iambic']
+    _morsetone_list = ['%d Hz' % x for x in [500, 600, 700, 800, 1000]]
+    _morsepower_list = ['Low Power', 'Middle Power', 'High Power']
+    _aprsssid_list = ['%d' % x for x in range(0, 16)]
+    _aprsiconpri_list = ['! Police',
+                         '" Rain Cloud',
+                         '# Digi',
+                         '$ Phone',
+                         '% DX Cluster',
+                         '& Gateway',
+                         '\' Aircraft',
+                         '( Cloudy',
+                         ') Gas Station',
+                         '* Snow',
+                         '+ Red Cross',
+                         ', Boy Scout',
+                         '- House QTH',
+                         '. X',
+                         '/ Dot',
+                         '0 Circle',
+                         '1 Circle',
+                         '2 Circle',
+                         '3 Circle',
+                         '4 Circle',
+                         '5 Circle',
+                         '6 Circle',
+                         '7 Circle',
+                         '8 Circle',
+                         '9 Circle',
+                         ': Fire',
+                         '; Campground',
+                         '< Motorcycle',
+                         '= Railroad',
+                         '> Car',
+                         '? Server',
+                         '@ Hurricane',
+                         'A Aid Station',
+                         'B BBS',
+                         'C Canoe',
+                         'D Eyeball',
+                         'E Horse',
+                         'F Fire Truck',
+                         'G Glider',
+                         'H Hospital',
+                         'I IOTA',
+                         'J Jeep',
+                         'K School',
+                         'L Laptop',
+                         'M Mic-E',
+                         'N Node',
+                         'O Balloon',
+                         'P Police',
+                         'Q Earthuake',
+                         'R Restaurant',
+                         'S Shuttle',
+                         'T SSTV',
+                         'U Bus',
+                         'V ATV',
+                         'W WX Station',
+                         'X Helicopter',
+                         'Y Yacht',
+                         'Z Shelter',
+                         '[ Human',
+                         '\\ Triangle',
+                         '] PBBS',
+                         '^ Aircraft',
+                         '_ WX Site',
+                         '` Dish Antenna',
+                         'a Ambulance',
+                         'b Bike',
+                         'c Incident',
+                         'd Fire Dept',
+                         'e Horse',
+                         'f Fire Truck',
+                         'g Glider',
+                         'h Hospital',
+                         'i Island',
+                         'j Jeep',
+                         'k Truck',
+                         'l Laptop',
+                         'm Mic-E',
+                         'n Node',
+                         'o EOC',
+                         'p Dog',
+                         'q Grid Square',
+                         'r Repeater',
+                         's Ship',
+                         't Tornado',
+                         'u Truck',
+                         'v Van',
+                         'w Water Station',
+                         'x X-Aprs',
+                         'y House',
+                         'z Shelter',
+                         '{ Fog',
+                         '| Stream',
+                         '] Snow Shower',
+                         '~ TNC Stream',
+                         ]
+    _aprsiconalt_list = ['! Emergency',
+                         '" Rain',
+                         '# Digi',
+                         '$ Bank',
+                         '% Power Plant',
+                         '& Diamond',
+                         '\' Crash Site',
+                         '( Storm',
+                         ') Gas',
+                         '* Snowflake',
+                         '+ Church',
+                         ', Girl Scout',
+                         '- House',
+                         '. Ambiguous',
+                         '/ Waypoint',
+                         '0 Circle 0',
+                         '1 Circle 1',
+                         '2 Circle 2',
+                         '3 Circle 3',
+                         '4 Circle 4',
+                         '5 Circle 5',
+                         '6 Circle 6',
+                         '7 Circle 7',
+                         '8 Circle 8',
+                         '9 Circle 9',
+                         ': Hail',
+                         '; Park',
+                         '< Advisory',
+                         '= Overlay',
+                         '> Car (Side)',
+                         '? Info Kiosk',
+                         '@ Hurricane',
+                         'A Box',
+                         'B Blowing Snow',
+                         'C Coast Guard',
+                         'D Drizzle',
+                         'E Smoke',
+                         'F Freezing Rain',
+                         'G Snow Shower',
+                         'H Haze',
+                         'I Rain Shower',
+                         'J Lightning',
+                         'K Kenwood',
+                         'L Lighthouse',
+                         'M Maars',
+                         'N Navigation',
+                         'O Rocket',
+                         'P Parking',
+                         'Q Quake',
+                         'R Restaurant',
+                         'S Satellite',
+                         'T Thunderstorm',
+                         'U Sunny',
+                         'V VORTAC',
+                         'W NWS Site',
+                         'X Pharmacy',
+                         'Y Radios',
+                         'Z Hot',
+                         '[ Humid',
+                         '\\ Rain',
+                         '] PBBS',
+                         '^ Aircraft',
+                         '_ Weather Site',
+                         '` Dish',
+                         'a Automobile',
+                         'b Blowing Dust',
+                         'c Civil Defense',
+                         'd DX Spot',
+                         'e Sleet',
+                         'f Funnel Cloud',
+                         'g Gale',
+                         'h Store',
+                         'i HAM Store',
+                         'j WorkZone',
+                         'k SUV',
+                         'l Area',
+                         'm Mist',
+                         'n Network',
+                         'o Balloon',
+                         'p Police',
+                         'q TBD',
+                         'r Restrooms',
+                         's Ship',
+                         't Truck Stop',
+                         'u Truck',
+                         'v Van',
+                         'w Flooding',
+                         'x Wreck',
+                         'y Skywarn',
+                         'z Shelter',
+                         '{ Fog',
+                         '| TNC',
+                         '] Snow',
+                         '~ TNC',
+                         ]
+    _aprsmictype_list = ['0: Off Duty', '1: En Route', '2: In Service',
+                         '3: Returning', '4: Commited', '5: Special',
+                         '6: Priority', '7: Emergency',]
+    _aprsroutecount_list = ['%d' % x for x in range(0, 10)]
+    _digifwdCh_list = ['CH-A', 'CH-B', 'CHA+CHB']
+    _digiwaitb4fwd_list = ['%dS' % x for x in range(0, 10)]
+    _aprsrxch_list = ['OFF', 'CH-A', 'CH-B']
+    _aprstxch_list = ['CHA-Lock', 'CHB-Lock',
+                      'CHA-Auto', 'CHB-Auto', 'CHA+CHB']
+    _aprspttprio_list = ['Call', 'APRS']
 
-    _end_format = TDH3_Plus._end_format + """
+    _morse_format = """
+    // Morse
+    #seekto 0x302a;
+    struct {
+      u8 tone:4,    // 0x302a 4 bit morse tone idx
+        speed:3,    //   3 bit morse speed idx
+        on:1;       //   1 bit morse on/off bool
+      u8 keytype:2, // 0x302b 2 bit CW key type idx
+        power:2,    //        2 bit CW power idx
+        rxthresh:4; //        4 bit morse RX thresh idx
+    } morse;
+    """
+
+    _extra_format = """
     // H9 GNSS
     #seekto 0x3066;
     struct { // GNSS config data, 0x1c bytes
@@ -2675,26 +2908,58 @@ class TDH9(TDH3_Plus):
       u8 gpsspeed;       // 0x3071 1 byte gps speed UOM idx
       u8 gpsdist;        // 0x3072 1 byte gps dist UOM idx
       u8 gpsalt;         // 0x3073 1 byte gps alt UOM idx
-      u8 fixlat[0x05];   // 0x3074 5 byte fixed long
-      u8 fixlon[0x05];   // 0x3079 5 byte fixed lat
-      i32 fixalt;        // 0x307e 4 byte fixed alt
+      struct {           // 0x3074 5 byte fixed lon
+        u32 deg;
+        char dir[1];
+      } fixlon;
+      struct {           // 0x3079 5 byte fixed lat
+        u32 deg;
+        char dir[1];
+        } fixlat;
+      i32 fixalt;        // 0x307e 32 bit signed int fixed alt
     } gnss;
 
     // H9 APRS
     #seekto 0x3082;
     struct { // APRS config data, 0x98 bytes
-      u8 unknown0;
+      u8 unknown0;      // 0x3082
       u8 gpssite;       // 0x3083 1 byte APRS site type idx
       u8 on;            // 0x3084 1 byte APRS on/off bool
-      u8 unknown1[0x71];
-      u8 unused0:7,     // 0x30f6
-      ptt_linkage:1;    // 1 bit PTT linkage on/off
-      u8 unused1:7,     // 0x30f7
-        timed_beacon:1; // 1 bit timed beacon on/off
+      char call[6];     // 0x3085 6 char APRS callsigh, null padded
+      u8 ssid;          // 0x308b 1 byte ssid idx
+      u8 ssidsymbol;    // 0x308c 1 byte ssid symbol idx
+      u8 uknown1[16];   // 0x308d
+      char custinfo[64];// 0x309d 64 char custom info
+      u8 unknown2;      // 0x30dd
+      u8 icon;          // 0x30de 1 byte icon idx
+      u8 micestart;     // 0x30df 1 byte mic-e start on/off
+      u8 mictype;       // 0x30e0 1 byte mic type idzx
+      char route1[8];   // 0x30e1 8 char APRS route1 name, null padded
+      u8 route1count;   // 0x30e9 1 byte rount1 count idx
+      char route2[8];   // 0x30ea  8 char APRS route2 name, null padded
+      u8 route2count;   // 0x30f2 1 byte rount2 count idx
+      u8 reportvoltage; // 0x30f3 1 byte report voltage on/off
+      u8 reportsats;    // 0x30f4 1 byte report sats on/off
+      u8 reportmilage;  // 0x30f5 1 byte report milage on/off
+      u8 ptt_linkage;   // 0x30f6 1 byte PTT linkage on/off
+      u8 timed_beacon;  // 0x30f7 1 byte timed beacon on/off
       ul16 timing;      // 0x30f8 2 byte beacon timing in seconds
-      u8 unknown2[0x1c];
+      u8 digifwdch;     // 0x30fa 1 byte digi fwd chan idx
+      u8 digi1on;       // 0x30fb 1 byte digi 1 enable
+      char digi1name[8];// 0x30fc 8 char digi 1 name
+      u8 digi2on;       // 0x3104 1 byte digi 2 enable
+      char digi2name[8];// 0x3105 8 char digi 2 naame
+      u8 digiwaitb4fwd; // 0x310d 1 byte digi wait b4 fwd idx
+      char remotepw[8]; // 0x310e 8 char remote relay pw
+      u8 rxchan;        // 0x3116 1 byte aprs rx chan idx
+      u8 txchan;        // 0x3117 1 byte aprs tx chan idx
+      u8 pttprio;       // 0x3118 1 byte ptt priority idx
+      u8 unknown3;      // 0x3119
+      u8 unknown4;      // 0x311a
+      u8 rxautopop;     // 0x311b 1 byte rx auto popup on/off
     } aprs;
     """
+    _end_format = _morse_format + TDH3_Plus._extra_format + _extra_format
 
     def get_features(self):
         rf = super().get_features()
@@ -2702,6 +2967,43 @@ class TDH9(TDH3_Plus):
         rf.valid_modes = self._modes
         rf.valid_tuning_steps = self._steps
         return rf
+
+    def get_settings_morse(self, morse_settings, settings_mem):
+        # Morse on/off
+        rs = RadioSettingValueBoolean(settings_mem.on)
+        mset = MemSetting('morse.on', 'Morse On/Off', rs)
+        mset.set_doc('Turn the Morse Code function On or Off')
+        morse_settings.append(mset)
+        # CW Key
+        rs = RadioSettingValueList(self._morsekey_list,
+                                   current_index=settings_mem.keytype)
+        mset = MemSetting('morse.keytype', 'CW Key', rs)
+        mset.set_doc('Select the Morse CW Key type')
+        morse_settings.append(mset)
+        # CW Speed
+        rs = RadioSettingValueList(self._morsespeed_list,
+                                   current_index=settings_mem.speed)
+        mset = MemSetting('morse.speed', 'CW Speed', rs)
+        mset.set_doc('Select the Morse Code CW Speed in WPM')
+        morse_settings.append(mset)
+        # CW Tone
+        rs = RadioSettingValueList(self._morsetone_list,
+                                   current_index=settings_mem.tone)
+        mset = MemSetting('morse.tone', 'CW Tone', rs)
+        mset.set_doc('Select the audible CW Tone to use with Morse Code')
+        morse_settings.append(mset)
+        # CW Power
+        rs = RadioSettingValueList(self._morsepower_list,
+                                   current_index=settings_mem.power)
+        mset = MemSetting('morse.power', 'CW Power', rs)
+        mset.set_doc('Select Morse CW Power')
+        morse_settings.append(mset)
+        # RX Threshold
+        rs = RadioSettingValueList(self._morserxthresh_list,
+                                   current_index=settings_mem.rxthresh)
+        mset = MemSetting('morse.rxthresh', 'RX Threshold', rs)
+        mset.set_doc('Select the Morse Code RX sensitivity threshold')
+        morse_settings.append(mset)
 
     def get_settings_gnss(self, gnss_settings, settings_mem):
         # 1 GPS on/off
@@ -2739,9 +3041,63 @@ class TDH9(TDH3_Plus):
         mset = MemSetting('gnss.gpsalt', 'Altitude Unit', rs)
         mset.set_doc('Select the GPS Altitude display Unit')
         gnss_settings.append(mset)
-        # 8 Fix lon
-        # 9 Fix lat
+        # 8 Fix Lon E-W
+
+        def _decode_latlon(value, dir):
+            x = round(int(value / 100) / 10_000, 7)
+            if str(dir).upper() in ['S', 'W']:
+                x = -x
+            return x
+
+        def _apply_lon(setting, obj):
+            x = abs(int(setting.value * 1_000_000))
+            obj.deg.set_value(x)
+            if setting.value < 0:
+                d = 'W'
+            else:
+                d = 'E'
+            obj.dir.set_value(d)
+
+        def _apply_lat(setting, obj):
+            x = abs(int(setting.value * 1_000_000))
+            obj.deg.set_value(x)
+            if setting.value < 0:
+                d = 'S'
+            else:
+                d = 'N'
+            obj.dir.set_value(d)
+
+        rs = RadioSettingValueFloat(-180.9999, 180.9999,
+                                    _decode_latlon(settings_mem.fixlon.deg,
+                                                   settings_mem.fixlon.dir))
+        rset = RadioSetting('gnss.fixlon.lon', 'Fix Lon', rs)
+        rset.set_apply_callback(_apply_lon, settings_mem.fixlon)
+        rset.set_doc('Set the GPS Fixed Longitude in decimal degrees. '
+                     'Negitive values indicate West Longitude')
+        gnss_settings.append(rset)
+        # 9 Fix lat N-S
+        rs = RadioSettingValueFloat(-90.9999, 90.9999,
+                                    _decode_latlon(settings_mem.fixlat.deg,
+                                                   settings_mem.fixlat.dir))
+        rset = RadioSetting('gnss.fixlon.lat', 'Fix Lat', rs)
+        rset.set_apply_callback(_apply_lat, settings_mem.fixlat)
+        rset.set_doc('Set the GPS Fixed Latitude in decial degrees. '
+                     'Negitive values indicate South Latitude')
+        gnss_settings.append(rset)
         # 10 Fix alt
+
+        def _apply_alt(setting, obj):
+            obj.set_value(
+                int.from_bytes(struct.pack(
+                    '>i', int(setting.value * 1_000_000)), 'big')
+                    )
+
+        rs = RadioSettingValueInteger(-0xffff, 0xffff,
+                                      int(settings_mem.fixalt / 1_000_000))
+        rset = RadioSetting('gnss.fixalt', 'Fix Alt', rs)
+        rset.set_apply_callback(_apply_alt, settings_mem.fixalt)
+        rset.set_doc('Set the GPS Fixed Altitude in Meters')
+        gnss_settings.append(rset)
 
     def get_settings_aprs(self, aprs_settings, settings_mem):
         # 1 APRS on/off
@@ -2749,66 +3105,203 @@ class TDH9(TDH3_Plus):
         mset = MemSetting('aprs.on', 'APRS Switch', rs)
         mset.set_doc('Turn the APRS function On or Off')
         aprs_settings.append(mset)
-        # GPS site type
+        # 2 GPS site type
         rs = RadioSettingValueList(self._gpssite_list,
                                    current_index=settings_mem.gpssite)
         mset = MemSetting('aprs.gpssite', 'Site Type', rs)
         mset.set_doc('Select the APRS site type')
         aprs_settings.append(mset)
+
         # 2 beacon set
         beacon_set = RadioSettingSubGroup('beacon_set', 'Beacon Set')
         aprs_settings.append(beacon_set)
-        # 1 call sign
-        # 2 ssid
-        # 3 ssid symbol
-        # 4 custom info
-        # 5 icon settings
-        # 6 MIC-E Start
-        # 7 MIC Type
-        # 8 route 1
-        # 9 route 1 count
-        # 10 route 2
-        # 11 route 2 count
-        # 12 report voltage
-        # 13 report stats
-        # 14 report mileage
+        # 2.1 call sign string
+        rs = RadioSettingValueString(1, 6,
+                                     str(settings_mem.call).rstrip('\x00'),
+                                     True, chirp_common.CHARSET_ASCII,
+                                     '\x00')
+        mset = MemSetting('aprs.call', 'Call Sign', rs)
+        mset.set_doc('Enter the APRS Call Sign')
+        beacon_set.append(mset)
+        # 2.2 ssid list
+        rs = RadioSettingValueList(self._aprsssid_list,
+                                   current_index=settings_mem.ssid)
+        mset = MemSetting('aprs.ssid', 'SSID', rs)
+        mset.set_doc('Set the APRS SSID value')
+        beacon_set.append(mset)
+        # 2.3 ssid symbol list
+        rs = RadioSettingValueMap(self._aprsssidsymbol_map,
+                                  settings_mem.ssidsymbol)
+        mset = MemSetting('aprs.ssidsymbol', 'SSID Symbol', rs)
+        mset.set_volatile(True)
+        mset.set_doc('Set the APRS SSID Symbol value')
+        beacon_set.append(mset)
+        # 2.4 custom info string
+        rs = RadioSettingValueString(0, 64,
+                                     str(settings_mem.custinfo).rstrip('\x00'),
+                                     True, chirp_common.CHARSET_ASCII,
+                                     '\x00')
+        mset = MemSetting('aprs.custinfo', 'Custom Info', rs)
+        mset.set_doc('Enter the APRS Beacon Custom Info')
+        beacon_set.append(mset)
+        # 2.5 icon settings list
+        if settings_mem.ssidsymbol == 0x2f:
+            _icon_list = self._aprsiconpri_list
+        elif settings_mem.ssidsymbol == 0x5c:
+            _icon_list = self._aprsiconalt_list
+        rs = RadioSettingValueList(_icon_list,
+                                   current_index=settings_mem.icon)
+        mset = MemSetting('aprs.icon', 'Icon Settings', rs)
+        mset.set_doc('Set the APRS Icon')
+        beacon_set.append(mset)
+        # 2.6 MIC-E Start bool
+        rs = RadioSettingValueBoolean(settings_mem.micestart)
+        mset = MemSetting('aprs.micestart', 'MIC-E Start', rs)
+        mset.set_doc('Set to enable MIC-E at Start')
+        beacon_set.append(mset)
+        # 2.7 MIC Type list
+        rs = RadioSettingValueList(self._aprsmictype_list,
+                                   current_index=settings_mem.mictype)
+        mset = MemSetting('aprs.mictype', 'MIC Type', rs)
+        mset.set_doc('Set the MIC Type')
+        beacon_set.append(mset)
+        # 2.8 route 1 string
+        rs = RadioSettingValueString(1, 8,
+                                     str(settings_mem.route1).rstrip('\x00'),
+                                     True, chirp_common.CHARSET_ASCII,
+                                     '\x00')
+        mset = MemSetting('aprs.route1', 'Route 1', rs)
+        mset.set_doc('Enter the APRS Route 1 name')
+        beacon_set.append(mset)
+        # 2.9 route 1 count list
+        rs = RadioSettingValueList(self._aprsroutecount_list,
+                                   current_index=settings_mem.route1count)
+        mset = MemSetting('aprs.route1count', 'Route 1 Count', rs)
+        mset.set_doc('Select the APRS Route 1 count value')
+        beacon_set.append(mset)
+        # 2.10 route 2 sring
+        rs = RadioSettingValueString(1, 8,
+                                     str(settings_mem.route2).rstrip('\x00'),
+                                     True, chirp_common.CHARSET_ASCII,
+                                     '\x00')
+        mset = MemSetting('aprs.route2', 'Route 2', rs)
+        mset.set_doc('Enter the APRS Route 2 name')
+        beacon_set.append(mset)
+        # 2.11 route 2 count list
+        rs = RadioSettingValueList(self._aprsroutecount_list,
+                                   current_index=settings_mem.route2count)
+        mset = MemSetting('aprs.route2count', 'Route 2 Count', rs)
+        mset.set_doc('Select the APRS Route 2 count value')
+        beacon_set.append(mset)
+        # 2.12 report voltage bool
+        rs = RadioSettingValueBoolean(settings_mem.reportvoltage)
+        mset = MemSetting('aprs.reportvoltage', 'Report Voltage', rs)
+        mset.set_doc('Set to enable Voltage Reporting')
+        beacon_set.append(mset)
+        # 2.13 report sats bool
+        rs = RadioSettingValueBoolean(settings_mem.reportsats)
+        mset = MemSetting('aprs.reportsats', 'Report Sats', rs)
+        mset.set_doc('Set to enable Satalite Reporting')
+        beacon_set.append(mset)
+        # 2.14 report mileage bool
+        rs = RadioSettingValueBoolean(settings_mem.reportmilage)
+        mset = MemSetting('aprs.reportmilage', 'Report Milage', rs)
+        mset.set_doc('Set to enable Milage Reporting')
+        beacon_set.append(mset)
 
         # 3 beacon type
         beacon_type = RadioSettingSubGroup('beacon_type', 'Beacon Type')
         aprs_settings.append(beacon_type)
-        # 1 ptt linkage
+        # 3.1 ptt linkage
         rs = RadioSettingValueBoolean(settings_mem.ptt_linkage)
         mset = MemSetting('aprs.ptt_linkage', 'PTT Linkage', rs)
         mset.set_doc('Set to enable the APRS PTT linkage function')
         beacon_type.append(mset)
-        # 2 timed beacon
+        # 3.2 timed beacon
         rs = RadioSettingValueBoolean(settings_mem.timed_beacon)
         mset = MemSetting('aprs.timed_beacon', 'Timed Beacon', rs)
         mset.set_doc('Set to enable the APRS timed beacon function')
         beacon_type.append(mset)
-        # 3 beacon timing
+        # 3.3 beacon timing
         rs = RadioSettingValueInteger(1, 0xfffe, settings_mem.timing)
         mset = MemSetting('aprs.timing', 'Beacon Timing', rs)
         mset.set_doc('Set the APRS timed beacon interval in seconds')
         beacon_type.append(mset)
+
         # 4 relay set
         relay_set = RadioSettingSubGroup('relay_set', 'Relay Set')
         aprs_settings.append(relay_set)
-        # 1 digi forward ch
-        # 2 digi1 enable
-        # 3 digi1 name
-        # 4 digi2 enable
-        # 5 digi2 name
-        # 6 wait before fwd
-        # 7 remote password
+        # 4.1 digi forward ch list
+        rs = RadioSettingValueList(self._digifwdCh_list,
+                                   current_index=settings_mem.digifwdch)
+        mset = MemSetting('aprs.digifwdch', 'DIGI Forward CH', rs)
+        mset.set_doc('Select the Channel to use for DIGI Forward')
+        relay_set.append(mset)
+        # 4.22 digi1 enable bool
+        rs = RadioSettingValueBoolean(settings_mem.digi1on)
+        mset = MemSetting('aprs.digi1on', 'DIGI1 Enable', rs)
+        mset.set_doc('Set to enable APRS relay on DIGI 1')
+        relay_set.append(mset)
+        # 4.33 digi1 name
+        rs = RadioSettingValueString(
+            1, 8, str(settings_mem.digi1name).rstrip('\x00'),
+            True, chirp_common.CHARSET_ASCII, '\x00')
+        mset = MemSetting('aprs.digi1name', 'DIGI1 Name', rs)
+        mset.set_doc('Enter the Relay DIGI 1 Name')
+        relay_set.append(mset)
+        # 4.4 digi2 enable bool
+        rs = RadioSettingValueBoolean(settings_mem.digi2on)
+        mset = MemSetting('aprs.digi2on', 'DIGI2 Enable', rs)
+        mset.set_doc('Set to enable APRS relay on DIGI 2')
+        relay_set.append(mset)
+        # 4.5 digi2 name
+        rs = RadioSettingValueString(
+            1, 8, str(settings_mem.digi2name).rstrip('\x00'),
+            True, chirp_common.CHARSET_ASCII, '\x00')
+        mset = MemSetting('aprs.digi2name', 'DIGI2 Name', rs)
+        mset.set_doc('Enter the Relay DIGI 2 Name')
+        relay_set.append(mset)
+        # 4.6 wait before fwd list
+        rs = RadioSettingValueList(self._digiwaitb4fwd_list,
+                                   current_index=settings_mem.digiwaitb4fwd)
+        mset = MemSetting('aprs.digiwaitb4fwd', 'Wait before FWD', rs)
+        mset.set_doc('Select delay be for DIGI forwarding')
+        relay_set.append(mset)
+        # 4.7 remote password
+        rs = RadioSettingValueString(1, 8,
+                                     str(settings_mem.remotepw).rstrip('\x00'),
+                                     True, chirp_common.CHARSET_ASCII,
+                                     '\x00')
+        mset = MemSetting('aprs.remotepw', 'Remote Password', rs)
+        mset.set_doc('Enter the APRS DIGI Relay Remote Passwrod')
+        relay_set.append(mset)
 
         # 5 advanced set
         advanced_set = RadioSettingSubGroup('advanced_set', 'Advanced Set')
         aprs_settings.append(advanced_set)
-        # 1 aprs  rx ch
-        # 2 aprs tx ch
-        # 3 ptt priority
-        # 4 rx auto popup
+        # 5.1 aprs rx ch ist
+        rs = RadioSettingValueList(self._aprsrxch_list,
+                                   current_index=settings_mem.rxchan)
+        mset = MemSetting('aprs.rxchan', 'APRS RX CH', rs)
+        mset.set_doc('Select the APRS RX Channel')
+        advanced_set.append(mset)
+        # 5.2 aprs tx ch list
+        rs = RadioSettingValueList(self._aprstxch_list,
+                                   current_index=settings_mem.txchan)
+        mset = MemSetting('aprs.txchan', 'APRS TX CH', rs)
+        mset.set_doc('Select the APRS TX Channel')
+        advanced_set.append(mset)
+        # 5.3 ptt priority list
+        rs = RadioSettingValueList(self._aprspttprio_list,
+                                   current_index=settings_mem.pttprio)
+        mset = MemSetting('aprs.pttprio', 'PTT Priority', rs)
+        mset.set_doc('Select the APRS PTT Priority value')
+        advanced_set.append(mset)
+        # 5.4 rx auto popup bool
+        rs = RadioSettingValueBoolean(settings_mem.rxautopop)
+        mset = MemSetting('aprs.rxautopop', 'RX Auto Popup', rs)
+        mset.set_doc('Set to enable the RX Auto Popup function')
+        advanced_set.append(mset)
 
     def get_settings_spec(self, spec_settings, settings_mem):
         _settings_mem = self._memobj.gnss
@@ -2940,6 +3433,7 @@ class RT730(TDH8):
     _has_repeater_tone = False
     _has_talkaround = False
     _has_pttdelay = False
+    _has_callcode = False
 
     _steps = [2.5, 5.0, 6.25, 10.0, 12.5, 20.0, 25.0, 8.33]
     _step_list = ['%2.2fK' % x for x in _steps]
