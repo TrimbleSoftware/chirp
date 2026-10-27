@@ -2455,7 +2455,10 @@ class TDH3_Plus(TDH3):
         rp.info = (dedent("""\
             To Upload to the TD-H3 Plus or TD-H9 over a ble-serial
             connection, the ble-serial MTU must be set to at least 37.
-            Use the ble-serial -m command line option to set the MTU."""))
+            Use the ble-serial -m command line option to set the MTU.\n\n
+            To reliably upload data into the TD-H3 Plus or TD-H9 upper
+            memory area above 0x3000 (Morse, SMS, GNSS, APRS Settings)
+            a ble-serial connection must be used!"""))
         return rp
 
     @classmethod
