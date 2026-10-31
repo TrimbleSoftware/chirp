@@ -1,6 +1,6 @@
 # Test Module for TD-H3, TD-H3 Plus, TD-H8 Gen2, 3 & 4,
 # TD-H9 and Radtel RT-730 Support.
-# Ver beta 102626.0
+# Ver beta 103126.0
 # Copyright 2026 Fred Trimble <chirpdriver@gmail.com>
 # CHIRP driver for the TIDRADIO TD-H8 Gen 2, 3 & 4, TD-H3 & Plus
 # and TD-H9  and Radtel RT-730 handheld radios
@@ -2209,8 +2209,7 @@ class TDH3FM(TDH8FM, TDH3):
     _mem_params = TDH3._mem_params
 
     def get_features(self):
-        rf = super().get_features()
-        rf.valid_bands = self._rxbands
+        rf = TDH8FM.get_features(self)
         return rf
 
 
@@ -2599,6 +2598,10 @@ class TDH3_PlusFM(TDH3FM):
     MODEL = 'TD-H3-Plus'
     VARIANT = 'FM Broadcast'
     _fmband = [(87000000, 108000000)]  # in Mhz, 87.0-108.0 MH
+
+    def get_features(self):
+        rf = TDH8FM.get_features(self)
+        return rf
 
 
 @directory.register
