@@ -1,3 +1,6 @@
+# Test Module for TD-H3, TD-H3 Plus, TD-H8 Gen2, 3 & 4,
+# TD-H9 and Radtel RT-730 Support.
+# Ver beta 102626.0
 # Copyright 2026 Fred Trimble <chirpdriver@gmail.com>
 # CHIRP driver for the TIDRADIO TD-H8 Gen 2, 3 & 4, TD-H3 & Plus
 # and TD-H9  and Radtel RT-730 handheld radios
@@ -1508,6 +1511,7 @@ class TDH8(chirp_common.CloneModeRadio):
         rs = RadioSettingValueList(self._operating_mode_list,
                                    current_index=settings_mem.mode)
         mset = MemSetting('settings.mode', 'Operating Mode', rs)
+        mset.set_volatile(True)
         mset.set_doc('Set the Operating Mode of the radio. Operating '
                      'Modes include HAM, GMRS or NORMAL (unlocked). Each mode '
                      'has different frequency ranges and capibilities.')
@@ -3042,6 +3046,7 @@ class TDH9(TDH3_Plus):
         rs = RadioSettingValueList(self._gpsalt_list,
                                    current_index=settings_mem.gpsalt)
         mset = MemSetting('gnss.gpsalt', 'Altitude Unit', rs)
+        mset.set_volatile(True)
         mset.set_doc('Select the GPS Altitude display Unit')
         gnss_settings.append(mset)
         # 8 Fix Lon E-W
@@ -3089,17 +3094,38 @@ class TDH9(TDH3_Plus):
         gnss_settings.append(rset)
         # 10 Fix alt
 
-        def _apply_alt(setting, obj):
-            obj.set_value(
-                int.from_bytes(struct.pack(
-                    '>i', int(setting.value * 1_000_000)), 'big')
-                    )
+        _fpm = 3.28084  # feet per meter conv factor
 
-        rs = RadioSettingValueInteger(-0xffff, 0xffff,
-                                      int(settings_mem.fixalt / 1_000_000))
+        def _decode_alt(value, uom):
+            x = int(value / 1_000_000)
+            if uom == 1:  # convert from meters to display feet
+                x = int(x * _fpm)
+            return x
+
+        def _apply_alt(setting, obj, uom):
+            x = int(setting.value * 1_000_000)
+            if gnss_settings['gnss_gpsalt'].changed():
+                if uom == 0:  # convert from feet to store as meters
+                    x = int(x / _fpm)
+            else:  # gps alt value changed, so update it
+                if uom == 1:  # convert feet to store as meters
+                    x = int(x / _fpm)
+            obj.set_value(x)
+
+        _maxalt = 2147  # max alt in meters
+        _minalt = -1000  # min alt in meters
+        if settings_mem.gpsalt == 1:  # convert to feet
+            _maxalt = _maxalt * _fpm
+            _minalt = _minalt * _fpm
+
+        rs = RadioSettingValueInteger(_minalt, _maxalt,
+                                      _decode_alt(settings_mem.fixalt,
+                                                  settings_mem.gpsalt))
         rset = RadioSetting('gnss.fixalt', 'Fix Alt', rs)
-        rset.set_apply_callback(_apply_alt, settings_mem.fixalt)
-        rset.set_doc('Set the GPS Fixed Altitude in Meters')
+        rset.set_apply_callback(_apply_alt, settings_mem.fixalt,
+                                settings_mem.gpsalt)
+        rset.set_doc('Set the GPS Fixed Altitude in ' +
+                     ('Feet' if settings_mem.gpsalt else 'Meters'))
         gnss_settings.append(rset)
 
     def get_settings_aprs(self, aprs_settings, settings_mem):
