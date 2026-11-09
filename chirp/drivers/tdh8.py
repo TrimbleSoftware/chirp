@@ -1,6 +1,6 @@
 # Test Module for TD-H3, TD-H3 Plus, TD-H8 Gen2, 3 & 4,
 # TD-H9 and Radtel RT-730 Support.
-# Ver beta 103126.0
+# Ver beta 110826.0
 # Copyright 2026 Fred Trimble <chirpdriver@gmail.com>
 # CHIRP driver for the TIDRADIO TD-H8 Gen 2, 3 & 4, TD-H3 & Plus
 # and TD-H9  and Radtel RT-730 handheld radios
@@ -2433,7 +2433,7 @@ class TDH3_Plus(TDH3):
                          (filename, self._td_file_offset, self._memsize))
                 self.process_mmap()
         else:
-            chirp_common.CloneModeRadio.load_mmap(self, filename)
+            super().load_mmap(filename)
 
     def save_mmap(self, filename):
         """Save .img map bytes as H3 Plus OEM CPS .td file.
@@ -2450,18 +2450,18 @@ class TDH3_Plus(TDH3):
                          'for 0x%05x bytes' %
                          (filename, (f.tell() - 1)))
         else:
-            chirp_common.CloneModeRadio.save_mmap(self, filename)
+            super().save_mmap(filename)
 
     @classmethod
     def get_prompts(cls):
         rp = super().get_prompts()
         rp.info = (dedent("""\
-            To Upload to the TD-H3 Plus or TD-H9 over a ble-serial
-            connection, the ble-serial MTU must be set to at least 37.
-            Use the ble-serial -m command line option to set the MTU.\n\n
-            To reliably upload data into the TD-H3 Plus or TD-H9 upper
-            memory area above 0x3000 (Morse, SMS, GNSS, APRS Settings)
-            a ble-serial connection must be used!"""))
+            To Upload to the TD-H3 Plus, TD H8 Gen4,  or TD-H9 over a
+            ble-serial connection, the ble-serial MTU must be set to at least
+            37. Use the ble-serial -m command line option to set the MTU.\n\n
+            To reliably upload data into the TD-H3 Plus, TD-H8 Gen 4, or TD-H9
+            upper memory area above 0x3000 (Extended Settings: Morse, SMS,
+            GNSS, APRS, etc) a ble-serial connection must be used!"""))
         return rp
 
     @classmethod
@@ -2559,8 +2559,6 @@ class TDH3_Plus(TDH3):
 
     def get_settings_spec(self, spec_settings, settings_mem):
         super().get_settings_spec(spec_settings, settings_mem)
-        # display mode
-
         # Bluetooth
         if self._has_bluetooth:
             settings_mem = self._memobj.bluetooth
