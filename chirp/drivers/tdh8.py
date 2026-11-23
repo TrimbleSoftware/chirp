@@ -1,6 +1,6 @@
 # Test Module for TD-H3, TD-H3 Plus, TD-H8 Gen2, 3 & 4,
 # TD-H9 and Radtel RT-730 Support.
-# Ver beta 110826.0
+# Ver beta 112226.0
 # Copyright 2026 Fred Trimble <chirpdriver@gmail.com>
 # CHIRP driver for the TIDRADIO TD-H8 Gen 2, 3 & 4, TD-H3 & Plus
 # and TD-H9  and Radtel RT-730 handheld radios
@@ -200,6 +200,7 @@ def _read_block(radio, block_addr, size):
         LOG.error(_msg)
         raise errors.RadioError(_msg)
     if response[:4] != expectedresponse:
+        _msg = 'Unexpected response reading block 0x%04x' % block_addr
         LOG.error(_msg)
         raise errors.RadioError(_msg)
 
@@ -260,11 +261,15 @@ def _do_upload(radio):
     if radio._is_on_ble:
         _msg += ' over BLE'
     # img data is always prefixed with the 8 byte radio ident value
-    data = _enter_programming_mode(radio, True, TRIES)
-    if radio.ident_mode == data:
+    _, _ident = _enter_programming_mode(radio, True, TRIES)
+    if radio.ident_mode == _ident:
         LOG.info('Successful match during Upload.')
     else:
-        LOG.error('Model mismatch during Upload!')
+        _msg = 'Model mismatch during Upload'
+        LOG.error(_msg + '\nExpected ident: %s\nGot ident     : %s' %
+                  (util.hexprint(radio.ident_mode), util.hexprint(_ident)))
+        raise errors.RadioError(_msg)
+
     LOG.info(_msg + '...')
 
     _max = int(sum(abs(x - y) for x, y in radio._ranges_main) /
